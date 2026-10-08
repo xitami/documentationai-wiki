@@ -11,6 +11,66 @@ Stay informed about the latest improvements to TWG. This changelog highlights ke
   Subscribe to our RSS feed or GitHub notifications to get changelog updates automatically.
 </Callout>
 
+<Update label="2026-10-08" description="v2.0.0" tags={["feature", "improvement", "bugfix"]}>
+
+## Questionnaire Analytics
+
+- Multiple-choice answers now display correctly with their selected options instead of showing a placeholder.
+- Added Yes/No question cards to the dashboard and trip question views, showing the percentage of "Yes" responses.
+- Removed the 30-question cap — trips can now display up to 250 questions.
+- Dotted selection masks are no longer incorrectly counted as free-text responses.
+
+## Aggregate API
+
+- Added new vehicle-day measures: full days, half days, and operating days. Single-day assignments up to five hours count as half days.
+- Extended the day dimension for vehicle-day queries from 92 to 366 days.
+- Vehicle-day downtime data is now available without requiring personal-data permission.
+- Staff-day aggregates now include drivers, companions, and tour leaders alongside existing roles.
+- Added filterable dimensions: role, category, and vehicle.
+- Normalized feedback scores using the same scoring rules as the feedback API.
+- Added human-readable labels for dimension values in aggregate results.
+- Added passenger counts (pax) to departure and booking aggregates.
+- Cancelled bookings are now excluded by default unless a status filter is applied.
+
+## Copilot
+
+- Added five groups of predefined quick prompts: reports, themes, free text, trends, and questionnaire.
+- Prompts automatically use the open trip or the current filter selection as scope.
+- Theme prompts use actual taxonomy slugs for precise filtering.
+
+## Dashboard and Filters
+
+- Redesigned header with a shared shell bar including brand, alerts, tenant selector, data freshness indicator, app switcher, and account menu.
+- Added removable filter chips for departure, driver, and tour-guide filters on trip pages.
+- Clarified trip-search behavior: selecting a row applies a filter, the external icon opens the trip page, and Enter filters while Shift+Enter opens a trip.
+- Added a "by guest / by question" switch for reviewing free-text answers.
+- Added question-grouped free-text analysis with answer counts, sentiment split, and sort options.
+- Added Top/Flop trips ranking by NPS or average rating with configurable minimum sample size.
+- Added question sections with prior-year values and deltas for question-group analytics.
+- Added Dossier number display in review details.
+
+## MCP Tools
+
+- Added an "analytics" output format for the aggregate query tool, returning chart-oriented columns and rows.
+- Added a departure dispositions lookup tool that returns vehicles, drivers, and tour leaders for a given trip.
+- Expanded remote MCP access to include all internal tools plus identity verification, with author and actor identity derived from the authenticated token.
+
+## Shared Components
+
+- Added shared entity notes across TWG applications, supporting listing, creating, editing, deleting, and marking notes as important.
+- Added a shared app switcher and user menu for consistent navigation across TWG applications.
+- Introduced centralized AI model and prompt resolution, with settings cached and a fallback to environment variables and code defaults.
+
+## Bug Fixes
+
+- Restored alert management routes that were accidentally removed.
+- API validation and conflict errors (400/409) now return the actual error message instead of a generic 503.
+- Disposition conflicts now return 409 Conflict with detailed JSON instead of a 500 error.
+- Fixed authentication session loss after approximately 24 hours — silent token renewal now correctly falls back to interactive login.
+- Fixed vehicle-day queries that failed with a 500 error due to a database syntax issue.
+
+</Update>
+
 <Update label="2024-10-15" description="v1.3.0" tags={["feature", "improvement"]}>
 
 ## New Features
@@ -106,6 +166,7 @@ Use the table below to identify changes affecting your integration.
 
 | Version | Key Changes | Migration Effort |
 |---------|-------------|------------------|
+| v2.0.0  | Questionnaire analytics, aggregate API expansion, Copilot prompts, dashboard redesign | Medium |
 | v1.3.0  | New seasonal endpoints | Low |
 | v1.2.0  | Deprecations added | Medium |
 | v1.1.0  | Breaking schema updates | High |
