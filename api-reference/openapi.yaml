@@ -1,185 +1,3690 @@
-openapi: '3.0.0'
+openapi: 3.0.0
 info:
   version: 1.0.0
-  title: TWG Documentation API
+  title: TWG TourData API
+  description: API for the TWG TourData platform, covering trips, bookings, customers, feedback, notes, aggregates, alerts, events, and more. All endpoints are mounted under `/api/v1`.
+  contact:
+    name: TWG API Support
   license:
     name: MIT
 servers:
-  - url: https://api.twg.com/v1
+  - url: https://api.twg.com/api/v1
+tags:
+  - name: Health
+    description: Service health and readiness checks.
+  - name: Trips
+    description: Trip and departure data.
+  - name: Bookings
+    description: Booking and participant data.
+  - name: Customers
+    description: Customer and person data.
+  - name: Notes
+    description: Notes attached to platform entities.
+  - name: Aggregates
+    description: Dataset metadata and aggregate queries.
+  - name: Feedback
+    description: Survey feedback, sentiment, and recommendations.
+  - name: Alerts
+    description: Alert metrics, rules, channels, and inbox.
+  - name: Events
+    description: Event catalog and delivery formats.
+  - name: Sync
+    description: Data synchronization status and refresh operations.
+  - name: Reference
+    description: Reference data catalogs.
+  - name: Graph
+    description: Entity relationship graphs.
+  - name: Dispositions
+    description: Departure disposition assignments.
+  - name: Dispo
+    description: Planning and staff assignments.
+  - name: Mail
+    description: Outbound mail and templates.
+  - name: KDDoc
+    description: Knowledge document and asset operations.
+security:
+  - BearerAuth: []
 paths:
-  /documents:
+  /health:
     get:
-      summary: List documents
-      operationId: listDocuments
+      tags:
+        - Health
+      summary: Get health status
+      description: Returns the service health status.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
+  /ready:
+    get:
+      tags:
+        - Health
+      summary: Get readiness status
+      description: Returns the service readiness status.
+      operationId: getReadiness
+      security: []
+      responses:
+        '200':
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ready
+  /trips:
+    get:
+      tags:
+        - Trips
+      summary: List trips
+      description: Lists trips using cursor pagination and optional filters.
+      operationId: listTrips
       parameters:
-        - name: limit
+        - $ref: '#/components/parameters/TenantId'
+        - name: trip_category
           in: query
-          description: How many items to return at one time (max 100)
-          required: false
+          description: Trip category filter.
+          schema:
+            type: string
+        - name: code_prefix
+          in: query
+          description: Trip code prefix.
+          schema:
+            type: string
+        - name: q
+          in: query
+          description: Full-text search query.
+          schema:
+            type: string
+        - name: country_id
+          in: query
+          description: Country identifier.
           schema:
             type: integer
-            format: int32
+        - name: country
+          in: query
+          description: Country name.
+          schema:
+            type: string
+        - name: departure_from
+          in: query
+          description: Earliest departure date.
+          schema:
+            type: string
+            format: date
+        - name: departure_to
+          in: query
+          description: Latest departure date.
+          schema:
+            type: string
+            format: date
+        - name: price_min
+          in: query
+          description: Minimum price.
+          schema:
+            type: number
+        - name: price_max
+          in: query
+          description: Maximum price.
+          schema:
+            type: number
+        - name: duration_min
+          in: query
+          description: Minimum duration.
+          schema:
+            type: integer
+        - name: duration_max
+          in: query
+          description: Maximum duration.
+          schema:
+            type: integer
+        - name: rating_min
+          in: query
+          description: Minimum rating.
+          schema:
+            type: number
+        - name: has_ship
+          in: query
+          description: Filter by ship availability.
+          schema:
+            type: boolean
+        - name: bus_class
+          in: query
+          description: Bus class filter.
+          schema:
+            type: string
+        - name: is_guaranteed
+          in: query
+          description: Filter guaranteed trips.
+          schema:
+            type: boolean
+        - name: is_sold_out
+          in: query
+          description: Filter sold-out trips.
+          schema:
+            type: boolean
+        - name: is_new
+          in: query
+          description: Filter new trips.
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/Limit500'
+        - $ref: '#/components/parameters/Cursor'
+        - name: sort
+          in: query
+          description: Sort order.
+          schema:
+            type: string
+            enum:
+              - code
+              - departure
+              - updated
+              - new
+              - rating
+              - price
+              - duration
       responses:
-        200:
-          description: An paged array of documents
-          headers:
-            x-next:
-              description: A link to the next page of responses
-              schema:
-                type: string
+        '200':
+          description: Trips returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Documents'
-        default:
-          description: unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    post:
-      summary: Create document
-      operationId: createDocument
-      responses:
-        201:
-          description: Null response
-        default:
-          description: unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /documents/{documentId}:
+                $ref: '#/components/schemas/PaginatedTripResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /trips/departures:
     get:
-      summary: Get document
-      operationId: showDocumentById
+      tags:
+        - Trips
+      summary: List trip departures
+      description: Lists departures matching a trip code prefix and date range.
+      operationId: listTripDepartures
       parameters:
-        - name: documentId
-          in: path
+        - name: code_prefix
+          in: query
+          description: Trip code prefix.
           required: true
-          description: The id of the document to retrieve
+          schema:
+            type: string
+        - name: departure_from
+          in: query
+          description: Earliest departure date.
+          schema:
+            type: string
+            format: date
+            default: '2026-01-01'
+        - name: departure_to
+          in: query
+          description: Latest departure date.
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/Limit2000'
+      responses:
+        '200':
+          description: Departures returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartureList'
+  /trips/{trip_id}:
+    get:
+      tags:
+        - Trips
+      summary: Get a trip
+      description: Returns a trip by numeric identifier.
+      operationId: getTrip
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: Trip returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /trips/{trip_id}/realization:
+    get:
+      tags:
+        - Trips
+      summary: Get trip realization
+      description: Returns realization details, sample booking, providers, and service counts.
+      operationId: getTripRealization
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+      responses:
+        '200':
+          description: Realization returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripRealization'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /trips/{trip_id}/similar:
+    get:
+      tags:
+        - Trips
+      summary: List similar trips
+      description: Returns trips similar to the specified trip.
+      operationId: listSimilarTrips
+      parameters:
+        - $ref: '#/components/parameters/TripId'
+        - $ref: '#/components/parameters/Limit50'
+      responses:
+        '200':
+          description: Similar trips returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimilarTripsResponse'
+  /bookings:
+    get:
+      tags:
+        - Bookings
+      summary: List bookings
+      description: Lists bookings with cursor pagination. Customer address and club membership fields are included when available.
+      operationId: listBookings
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: trip_id
+          in: query
+          description: Trip identifier.
+          schema:
+            type: integer
+        - name: customer_id
+          in: query
+          description: Customer identifier.
+          schema:
+            type: integer
+        - name: status
+          in: query
+          description: Booking status.
+          schema:
+            type: string
+        - name: dsid
+          in: query
+          description: Source dossier identifier.
+          schema:
+            type: string
+        - name: trip_start_from
+          in: query
+          description: Earliest trip start date.
+          schema:
+            type: string
+            format: date
+        - name: trip_start_to
+          in: query
+          description: Latest trip start date.
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/Limit500'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Bookings returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBookingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /bookings/stats:
+    get:
+      tags:
+        - Bookings
+      summary: Get booking statistics
+      description: Returns grouped booking statistics.
+      operationId: getBookingStats
+      parameters:
+        - name: group_by
+          in: query
+          description: Grouping dimension.
+          required: true
+          schema:
+            type: string
+            enum:
+              - trip
+              - tenant
+              - status
+              - kind
+              - month
+              - customer
+              - sales_agent
+        - name: order_by
+          in: query
+          description: Ordering measure.
+          schema:
+            type: string
+            enum:
+              - bookings
+              - pax
+              - invoice_total
+              - paid_total
+        - $ref: '#/components/parameters/TenantId'
+        - name: status
+          in: query
+          description: Booking status.
+          schema:
+            type: string
+        - name: trip_id
+          in: query
+          description: Trip identifier.
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          description: Maximum number of groups.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Statistics returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingStatsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /bookings/departure-crew:
+    get:
+      tags:
+        - Bookings
+      summary: Get departure crew
+      description: Returns guides and drivers assigned to a departure.
+      operationId: getDepartureCrew
+      parameters:
+        - $ref: '#/components/parameters/TripCodeRequired'
+        - $ref: '#/components/parameters/DepartureDateRequired'
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          description: Crew returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepartureCrew'
+  /bookings/manifest:
+    get:
+      tags:
+        - Bookings
+      summary: Get departure manifest
+      description: Returns participant manifest rows without guest phone numbers.
+      operationId: getBookingManifest
+      parameters:
+        - $ref: '#/components/parameters/TripCodeRequired'
+        - $ref: '#/components/parameters/DepartureDateRequired'
+      responses:
+        '200':
+          description: Manifest returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManifestResponse'
+  /bookings/{booking_id}:
+    get:
+      tags:
+        - Bookings
+      summary: Get a booking
+      description: Returns full booking JSON including participants, invoices, and services.
+      operationId: getBooking
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /bookings/{booking_id}/graph:
+    get:
+      tags:
+        - Graph
+      summary: Get booking graph
+      description: Returns the relationship graph centered on a booking.
+      operationId: getBookingGraph
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Graph returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /bookings/{booking_id}/hotels:
+    get:
+      tags:
+        - Bookings
+      summary: Get booking hotels
+      description: Returns hotels associated with a booking.
+      operationId: getBookingHotels
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Hotels returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingHotels'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /customers/{customer_id}:
+    get:
+      tags:
+        - Customers
+      summary: Get a customer
+      description: Returns customer details including address and club membership data.
+      operationId: getCustomer
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+      responses:
+        '200':
+          description: Customer returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /customers/{customer_id}/bookings:
+    get:
+      tags:
+        - Customers
+      summary: List customer bookings
+      description: Lists bookings for a customer.
+      operationId: listCustomerBookings
+      parameters:
+        - $ref: '#/components/parameters/CustomerId'
+        - $ref: '#/components/parameters/Limit500'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Customer bookings returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerBookingsResponse'
+  /persons/{person_id}:
+    get:
+      tags:
+        - Customers
+      summary: Get a person
+      description: Returns a person by numeric identifier.
+      operationId: getPerson
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+      responses:
+        '200':
+          description: Person returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Person'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /notes:
+    get:
+      tags:
+        - Notes
+      summary: List notes
+      description: Lists notes for an entity.
+      operationId: listNotes
+      parameters:
+        - name: entity_type
+          in: query
+          description: Entity type.
+          required: true
+          schema:
+            type: string
+            enum:
+              - booking
+              - trip
+              - customer
+        - name: entity_key
+          in: query
+          description: Entity key.
+          required: true
           schema:
             type: string
       responses:
-        200:
-          description: Expected response to a valid request
+        '200':
+          description: Notes returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Documents'
-        default:
-          description: unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /spaces:
-    get:
-      summary: List spaces
-      operationId: listSpaces
-      parameters:
-        - name: limit
-          in: query
-          description: How many items to return at one time (max 100)
-          required: false
-          schema:
-            type: integer
-            format: int32
-      responses:
-        200:
-          description: An paged array of spaces
-          headers:
-            x-next:
-              description: A link to the next page of responses
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Spaces'
-        default:
-          description: unexpected error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                required:
+                  - items
+                  - count
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Note'
+                  count:
+                    type: integer
+        '422':
+          $ref: '#/components/responses/ValidationError'
     post:
-      summary: Create space
-      operationId: createSpace
+      tags:
+        - Notes
+      summary: Create a note
+      description: Creates a note with Markdown or UI content.
+      operationId: createNote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNoteRequest'
       responses:
-        201:
-          description: Null response
-        default:
-          description: unexpected error
+        '201':
+          description: Note created.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-  /spaces/{spaceId}:
-    get:
-      summary: Get space
-      operationId: showSpaceById
+                $ref: '#/components/schemas/Note'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /notes/{note_id}:
+    patch:
+      tags:
+        - Notes
+      summary: Update a note
+      description: Updates note fields or content.
+      operationId: updateNote
       parameters:
-        - name: spaceId
-          in: path
+        - $ref: '#/components/parameters/NoteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNoteRequest'
+      responses:
+        '200':
+          description: Note updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags:
+        - Notes
+      summary: Delete a note
+      description: Deletes a note.
+      operationId: deleteNote
+      parameters:
+        - $ref: '#/components/parameters/NoteId'
+      responses:
+        '204':
+          description: Note deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /aggregates:
+    get:
+      tags:
+        - Aggregates
+      summary: Describe aggregate datasets
+      description: Returns datasets, measures, dimensions, limits, and caller policy.
+      operationId: describeAggregates
+      responses:
+        '200':
+          description: Aggregate capabilities returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AggregateDescription'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /aggregates/{dataset}/query:
+    post:
+      tags:
+        - Aggregates
+      summary: Query an aggregate dataset
+      description: Executes a structured aggregate query. Supports ETag and If-None-Match.
+      operationId: queryAggregateDataset
+      parameters:
+        - $ref: '#/components/parameters/Dataset'
+        - $ref: '#/components/parameters/IfNoneMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AggregateQueryRequest'
+      responses:
+        '200':
+          description: Aggregate results returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AggregateQueryResponse'
+        '304':
+          description: Results have not changed.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /aggregates/{dataset}/values:
+    get:
+      tags:
+        - Aggregates
+      summary: List aggregate dimension values
+      description: Returns dimension values with normalized feedback semantics and human-readable labels.
+      operationId: listAggregateValues
+      parameters:
+        - $ref: '#/components/parameters/Dataset'
+        - name: dimension
+          in: query
+          description: Dimension name.
           required: true
-          description: The id of the space to retrieve
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: Start of the time range.
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: End of the time range.
           schema:
             type: string
       responses:
-        200:
-          description: Expected response to a valid request
+        '200':
+          description: Dimension values returned.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Spaces'
-        default:
-          description: unexpected error
+                $ref: '#/components/schemas/AggregateValuesResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /feedback/summary:
+    get:
+      tags:
+        - Feedback
+      summary: Get feedback summary
+      description: Returns high-level feedback totals and sentiment distribution.
+      operationId: getFeedbackSummary
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/insights:
+    get:
+      tags:
+        - Feedback
+      summary: Get feedback insights
+      description: Returns feedback insights with optional trip, driver, guide, sentiment, theme, and date filters.
+      operationId: getFeedbackInsights
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: trip_code
+          in: query
+          description: Comma-separated trip codes.
+          schema:
+            type: string
+        - name: code_prefix
+          in: query
+          description: Trip code prefix filter.
+          schema:
+            type: string
+        - name: driver
+          in: query
+          description: Substring match on driver name.
+          schema:
+            type: string
+        - name: guide
+          in: query
+          description: Exact guide name from scheduling data.
+          schema:
+            type: string
+        - name: sentiment
+          in: query
+          description: Comma-separated sentiment values (positive, mixed, neutral, negative).
+          schema:
+            type: string
+        - name: theme
+          in: query
+          description: Comma-separated theme values.
+          schema:
+            type: string
+        - name: departure_from
+          in: query
+          description: Earliest departure date.
+          schema:
+            type: string
+            format: date
+        - name: departure_to
+          in: query
+          description: Latest departure date.
+          schema:
+            type: string
+            format: date
+        - name: created_from
+          in: query
+          description: Earliest created timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: created_to
+          in: query
+          description: Latest created timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: reiseart
+          in: query
+          description: Comma-separated travel categories.
+          schema:
+            type: string
+        - name: freetext_only
+          in: query
+          description: Filter to surveys with free-text responses only.
+          schema:
+            type: boolean
+            default: false
+        - name: top
+          in: query
+          description: Number of top items per category.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/nps:
+    get:
+      tags:
+        - Feedback
+      summary: Get NPS results
+      description: Returns NPS results and trends using the feedback filter set.
+      operationId: getFeedbackNps
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: trip_code
+          in: query
+          description: Comma-separated trip codes.
+          schema:
+            type: string
+        - name: code_prefix
+          in: query
+          description: Trip code prefix filter.
+          schema:
+            type: string
+        - name: driver
+          in: query
+          description: Substring match on driver name.
+          schema:
+            type: string
+        - name: guide
+          in: query
+          description: Exact guide name from scheduling data.
+          schema:
+            type: string
+        - name: sentiment
+          in: query
+          description: Comma-separated sentiment values (positive, mixed, neutral, negative).
+          schema:
+            type: string
+        - name: theme
+          in: query
+          description: Comma-separated theme values.
+          schema:
+            type: string
+        - name: departure_from
+          in: query
+          description: Earliest departure date.
+          schema:
+            type: string
+            format: date
+        - name: departure_to
+          in: query
+          description: Latest departure date.
+          schema:
+            type: string
+            format: date
+        - name: created_from
+          in: query
+          description: Earliest created timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: created_to
+          in: query
+          description: Latest created timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: reiseart
+          in: query
+          description: Comma-separated travel categories.
+          schema:
+            type: string
+        - name: freetext_only
+          in: query
+          description: Filter to surveys with free-text responses only.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/avg-ratings:
+    get:
+      tags:
+        - Feedback
+      summary: Get average ratings
+      description: Returns question-level rating aggregates.
+      operationId: getFeedbackAverageRatings
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: trip_code
+          in: query
+          description: Comma-separated trip codes.
+          schema:
+            type: string
+        - name: code_prefix
+          in: query
+          description: Trip code prefix filter.
+          schema:
+            type: string
+        - name: driver
+          in: query
+          description: Substring match on driver name.
+          schema:
+            type: string
+        - name: guide
+          in: query
+          description: Exact guide name from scheduling data.
+          schema:
+            type: string
+        - name: sentiment
+          in: query
+          description: Comma-separated sentiment values (positive, mixed, neutral, negative).
+          schema:
+            type: string
+        - name: theme
+          in: query
+          description: Comma-separated theme values.
+          schema:
+            type: string
+        - name: departure_from
+          in: query
+          description: Earliest departure date.
+          schema:
+            type: string
+            format: date
+        - name: departure_to
+          in: query
+          description: Latest departure date.
+          schema:
+            type: string
+            format: date
+        - name: created_from
+          in: query
+          description: Earliest created timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: created_to
+          in: query
+          description: Latest created timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: reiseart
+          in: query
+          description: Comma-separated travel categories.
+          schema:
+            type: string
+        - name: freetext_only
+          in: query
+          description: Filter to surveys with free-text responses only.
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          description: Maximum number of rating rows.
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/surveys:
+    get:
+      tags:
+        - Feedback
+      summary: List surveys
+      description: Lists surveys with cursor pagination.
+      operationId: listFeedbackSurveys
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: trip_code
+          in: query
+          description: Comma-separated trip codes.
+          schema:
+            type: string
+        - name: departure_from
+          in: query
+          description: Earliest departure date.
+          schema:
+            type: string
+            format: date
+        - name: departure_to
+          in: query
+          description: Latest departure date.
+          schema:
+            type: string
+            format: date
+        - name: include_raw
+          in: query
+          description: Include raw survey data.
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/Limit500'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Surveys returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedSurveyResponse'
+  /feedback/surveys/{survey_id}:
+    get:
+      tags:
+        - Feedback
+      summary: Get a survey
+      description: Returns a survey with sentiment and themes.
+      operationId: getFeedbackSurvey
+      parameters:
+        - $ref: '#/components/parameters/SurveyId'
+        - name: include_raw
+          in: query
+          description: Include raw survey data.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Survey returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Survey'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /feedback/trips/{trip_code}:
+    get:
+      tags:
+        - Feedback
+      summary: Get trip feedback
+      description: Returns aggregated survey data for a trip.
+      operationId: getTripFeedback
+      parameters:
+        - $ref: '#/components/parameters/TripCode'
+        - $ref: '#/components/parameters/TenantId'
+        - name: departure
+          in: query
+          description: Departure identifier or date.
+          schema:
+            type: string
+        - name: top_themes
+          in: query
+          description: Number of top themes.
+          schema:
+            type: integer
+        - name: voices
+          in: query
+          description: Number of representative voices.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /feedback/themes:
+    get:
+      tags:
+        - Feedback
+      summary: List feedback themes
+      description: Returns theme counts by polarity.
+      operationId: listFeedbackThemes
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: polarity
+          in: query
+          description: Sentiment polarity.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of themes.
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/top-trips:
+    get:
+      tags:
+        - Feedback
+      summary: List top feedback trips
+      description: Returns ranked trip feedback rows.
+      operationId: listTopFeedbackTrips
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: min_surveys
+          in: query
+          description: Minimum survey count.
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          description: Ranking field.
+          schema:
+            type: string
+            enum:
+              - surveys
+              - score
+        - name: limit
+          in: query
+          description: Maximum number of trips.
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /feedback/drivers:
+    get:
+      tags:
+        - Feedback
+      summary: List feedback drivers
+      description: Returns driver feedback counts.
+      operationId: listFeedbackDrivers
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: limit
+          in: query
+          description: Maximum number of drivers.
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/stats:
+    get:
+      tags:
+        - Feedback
+      summary: Get feedback statistics
+      description: Returns survey, rating, free-text, coverage, sentiment, theme, and category statistics.
+      operationId: getFeedbackStats
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/pipeline-status:
+    get:
+      tags:
+        - Feedback
+      summary: Get feedback pipeline status
+      description: Returns feedback analysis pipeline counts, ratios, timestamps, and model coverage.
+      operationId: getFeedbackPipelineStatus
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/sentiments:
+    get:
+      tags:
+        - Feedback
+      summary: List feedback sentiments
+      description: Returns sentiment records for surveys.
+      operationId: listFeedbackSentiments
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - name: departure_from
+          in: query
+          description: Earliest departure date.
+          schema:
+            type: string
+            format: date
+        - name: departure_to
+          in: query
+          description: Latest departure date.
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /feedback/query:
+    post:
+      tags:
+        - Feedback
+      summary: Execute a feedback query
+      description: Executes a permitted read-only SQL query.
+      operationId: queryFeedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sql
+                - max_rows
+              properties:
+                sql:
+                  type: string
+                max_rows:
+                  type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /feedback/recommendations:
+    get:
+      tags:
+        - Feedback
+      summary: Get a feedback recommendation
+      description: Returns the latest recommendation for a filter hash.
+      operationId: getFeedbackRecommendation
+      parameters:
+        - name: filter_hash
+          in: query
+          description: Recommendation filter hash.
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/TenantId'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags:
+        - Feedback
+      summary: Save a feedback recommendation
+      description: Persists a feedback recommendation.
+      operationId: createFeedbackRecommendation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRecommendationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /alerts/metrics:
+    get:
+      tags:
+        - Alerts
+      summary: List alert metrics
+      description: Returns metric definitions and freshness information.
+      operationId: listAlertMetrics
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/metrics/{metric}/values:
+    get:
+      tags:
+        - Alerts
+      summary: Get metric values
+      description: Returns current entity values for a metric.
+      operationId: getAlertMetricValues
+      parameters:
+        - $ref: '#/components/parameters/Metric'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/First5000'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules:
+    get:
+      tags:
+        - Alerts
+      summary: List alert rules
+      description: Returns alert rule definitions and trigger counts.
+      operationId: listAlertRules
+      parameters:
+        - name: nur_aktive
+          in: query
+          description: Return only active rules.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+    post:
+      tags:
+        - Alerts
+      summary: Create an alert rule
+      description: Creates an alert rule.
+      operationId: createAlertRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAlertRuleRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /alerts/rules/{rule_id}:
+    patch:
+      tags:
+        - Alerts
+      summary: Update an alert rule
+      description: Updates editable alert rule fields.
+      operationId: updateAlertRule
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAlertRuleRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/activate:
+    post:
+      tags:
+        - Alerts
+      summary: Activate an alert rule
+      description: Activates a rule after confirmation of its dry-run result.
+      operationId: activateAlertRule
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleConfirmation'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /alerts/rules/{rule_id}/deactivate:
+    post:
+      tags:
+        - Alerts
+      summary: Deactivate an alert rule
+      description: Deactivates an alert rule after confirmation.
+      operationId: deactivateAlertRule
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleConfirmation'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/preview:
+    get:
+      tags:
+        - Alerts
+      summary: Preview an alert rule
+      description: Returns rendered preview data for a rule.
+      operationId: previewAlertRule
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/test-mail:
+    post:
+      tags:
+        - Alerts
+      summary: Send a test alert mail
+      description: Sends a test mail for an alert rule.
+      operationId: sendAlertTestMail
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to:
+                  type: array
+                  items:
+                    type: string
+                    format: email
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/history:
+    get:
+      tags:
+        - Alerts
+      summary: Get alert rule history
+      description: Returns history rows for a rule.
+      operationId: getAlertRuleHistory
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/First500'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/fields:
+    get:
+      tags:
+        - Alerts
+      summary: Get alert UI fields
+      description: Returns UI field descriptors.
+      operationId: getAlertFields
+      parameters:
+        - name: metric
+          in: query
+          description: Metric name.
+          schema:
+            type: string
+        - name: rule_id
+          in: query
+          description: Rule identifier.
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/ui:
+    get:
+      tags:
+        - Alerts
+      summary: Get alert UI descriptor
+      description: Returns a rendered alert UI descriptor.
+      operationId: getAlertUi
+      parameters:
+        - name: view
+          in: query
+          description: UI view.
+          schema:
+            type: string
+            enum:
+              - overview
+              - rule
+              - preview
+              - history
+            default: overview
+        - name: rule_id
+          in: query
+          description: Rule identifier required for non-overview views.
+          schema:
+            type: integer
+        - name: probe
+          in: query
+          description: Enable probe mode.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /alerts/dry-run:
+    post:
+      tags:
+        - Alerts
+      summary: Execute an alert dry run
+      description: Calculates alert hits without activating a rule.
+      operationId: runAlertDryRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertDryRunRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/triggered:
+    get:
+      tags:
+        - Alerts
+      summary: List triggered alerts
+      description: Returns triggered alerts.
+      operationId: listTriggeredAlerts
+      parameters:
+        - name: seit
+          in: query
+          description: Return alerts since this timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: nur_offene
+          in: query
+          description: Return only open alerts.
+          schema:
+            type: boolean
+        - name: rule_id
+          in: query
+          description: Rule identifier.
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/First1000'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/endpoints:
+    get:
+      tags:
+        - Alerts
+      summary: List alert endpoints
+      description: Returns available webhook endpoints.
+      operationId: listAlertEndpoints
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/rules/{rule_id}/channels:
+    get:
+      tags:
+        - Alerts
+      summary: Get alert channels
+      description: Returns mail recipients, inbox subscribers, and webhook subscriptions.
+      operationId: getAlertChannels
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/subscribers:
+    put:
+      tags:
+        - Alerts
+      summary: Add an alert subscriber
+      description: Adds an email subscriber to an alert rule.
+      operationId: addAlertSubscriber
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                name:
+                  type: string
+      responses:
+        '201':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/subscribers/{email}:
+    delete:
+      tags:
+        - Alerts
+      summary: Remove an alert subscriber
+      description: Removes an email subscriber.
+      operationId: removeAlertSubscriber
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/EmailPath'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/subscribers/{email}/mute:
+    post:
+      tags:
+        - Alerts
+      summary: Mute an alert subscriber
+      description: Mutes an alert subscriber until an optional timestamp.
+      operationId: muteAlertSubscriber
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/EmailPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                until:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/rules/{rule_id}/webhooks/{endpoint}:
+    put:
+      tags:
+        - Alerts
+      summary: Subscribe an alert webhook
+      description: Subscribes an alert rule to a webhook endpoint.
+      operationId: subscribeAlertWebhook
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/Endpoint'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags:
+        - Alerts
+      summary: Unsubscribe an alert webhook
+      description: Removes an alert webhook subscription.
+      operationId: unsubscribeAlertWebhook
+      parameters:
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/Endpoint'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/inbox:
+    get:
+      tags:
+        - Alerts
+      summary: List alert inbox items
+      description: Returns inbox items for an email address.
+      operationId: listAlertInbox
+      parameters:
+        - $ref: '#/components/parameters/EmailRequired'
+        - name: nur_offene
+          in: query
+          description: Return only open items.
+          schema:
+            type: boolean
+            default: true
+        - name: first
+          in: query
+          description: Maximum number of items.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/inbox/count:
+    get:
+      tags:
+        - Alerts
+      summary: Count alert inbox items
+      description: Returns unread and open inbox counts.
+      operationId: countAlertInbox
+      parameters:
+        - $ref: '#/components/parameters/EmailRequired'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/inbox/read:
+    post:
+      tags:
+        - Alerts
+      summary: Mark alert inbox items read
+      description: Marks inbox items as read.
+      operationId: markAlertInboxRead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboxIdentity'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /alerts/inbox/{item_id}/ack:
+    post:
+      tags:
+        - Alerts
+      summary: Acknowledge an alert
+      description: Acknowledges an inbox item.
+      operationId: acknowledgeAlert
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InboxIdentity'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /alerts/inbox/{item_id}/snooze:
+    post:
+      tags:
+        - Alerts
+      summary: Snooze an alert
+      description: Snoozes an inbox item until a future timestamp.
+      operationId: snoozeAlert
+      parameters:
+        - $ref: '#/components/parameters/ItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnoozeRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /events/catalog:
+    get:
+      tags:
+        - Events
+      summary: Get event catalog
+      description: Documents event types, CloudEvents batch format, Excellence-items format, and Standard Webhooks HMAC headers.
+      operationId: getEventCatalog
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /sync/status:
+    get:
+      tags:
+        - Sync
+      summary: Get synchronization status
+      description: Returns synchronization status for entities.
+      operationId: getSyncStatus
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /sync/stats:
+    get:
+      tags:
+        - Sync
+      summary: Get synchronization statistics
+      description: Returns synchronized table statistics.
+      operationId: getSyncStats
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /sync/refresh-bookings:
+    post:
+      tags:
+        - Sync
+      summary: Refresh booking data
+      description: Refreshes booking data for a departure when permitted.
+      operationId: refreshBookings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - trip_code
+                - departure_date
+              properties:
+                trip_code:
+                  type: string
+                departure_date:
+                  type: string
+                  format: date
+                tenant_id:
+                  type: string
+                max_age_minutes:
+                  type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '504':
+          description: Refresh timed out.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /reference:
+    get:
+      tags:
+        - Reference
+      summary: List reference kinds
+      description: Returns available reference data kinds.
+      operationId: listReferenceKinds
+      responses:
+        '200':
+          description: Reference kinds returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - kinds
+                properties:
+                  kinds:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      - countries
+                      - service-types
+                      - trip-categories
+                      - tenants
+                      - sales-agents
+                      - questions
+                      - choices
+  /reference/{kind}:
+    get:
+      tags:
+        - Reference
+      summary: Get reference data
+      description: Returns entries for a reference kind.
+      operationId: getReferenceData
+      parameters:
+        - $ref: '#/components/parameters/ReferenceKind'
+        - name: search
+          in: query
+          description: Search term.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of entries.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2000
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /graph:
+    get:
+      tags:
+        - Graph
+      summary: Get an entity graph
+      description: Returns a relationship graph for an entity.
+      operationId: getEntityGraph
+      parameters:
+        - name: entity_type
+          in: query
+          description: Entity type.
+          required: true
+          schema:
+            type: string
+            enum:
+              - booking
+              - trip
+              - customer
+              - departure
+        - name: entity_key
+          in: query
+          description: Entity key.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Graph returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /dispositions/departure:
+    get:
+      tags:
+        - Dispositions
+      summary: Get departure dispositions
+      description: Returns assignments matched to a departure.
+      operationId: getDepartureDispositions
+      parameters:
+        - $ref: '#/components/parameters/TenantIdRequired'
+        - $ref: '#/components/parameters/TripCodeRequired'
+        - $ref: '#/components/parameters/DepartureDateRequired'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /dispo/assignments:
+    post:
+      tags:
+        - Dispo
+      summary: Create a disposition assignment
+      description: Creates a planning assignment with a mandatory decision log.
+      operationId: createDispoAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DispoAssignmentRequest'
+      responses:
+        '201':
+          $ref: '#/components/responses/GenericSuccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /dispo/assignments/{assignment_id}:
+    patch:
+      tags:
+        - Dispo
+      summary: Update a disposition assignment
+      description: Updates an assignment status with a mandatory decision log.
+      operationId: updateDispoAssignment
+      parameters:
+        - $ref: '#/components/parameters/AssignmentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+                - decision
+              properties:
+                status:
+                  type: string
+                decision:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /dispo/snapshot:
+    get:
+      tags:
+        - Dispo
+      summary: Get planning snapshot
+      description: Returns a complete planning snapshot for a season.
+      operationId: getDispoSnapshot
+      parameters:
+        - $ref: '#/components/parameters/TenantIdRequired'
+        - name: season_from
+          in: query
+          description: Season start.
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: season_to
+          in: query
+          description: Season end.
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /dispo/runs:
+    post:
+      tags:
+        - Dispo
+      summary: Create a disposition run
+      description: Creates a planning run with proposals.
+      operationId: createDispoRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenant_id
+                - dates
+                - profile
+                - start_user
+                - proposals
+              properties:
+                tenant_id:
+                  type: string
+                dates:
+                  type: array
+                  items:
+                    type: string
+                profile:
+                  type: object
+                  additionalProperties: true
+                start_user:
+                  type: string
+                proposals:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+      responses:
+        '201':
+          $ref: '#/components/responses/GenericSuccess'
+    get:
+      tags:
+        - Dispo
+      summary: List disposition runs
+      description: Lists planning runs for a tenant.
+      operationId: listDispoRuns
+      parameters:
+        - $ref: '#/components/parameters/TenantIdRequired'
+        - name: limit
+          in: query
+          description: Maximum number of runs.
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /dispo/runs/{run_id}/proposals:
+    get:
+      tags:
+        - Dispo
+      summary: List run proposals
+      description: Returns ranked proposals for a planning run.
+      operationId: listDispoRunProposals
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/TripCode'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /mail/messages:
+    post:
+      tags:
+        - Mail
+      summary: Send a mail message
+      description: Queues an outbound mail message. Duplicate idempotency keys return the existing message.
+      operationId: createMailMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailMessageRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/GenericSuccess'
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+    get:
+      tags:
+        - Mail
+      summary: List mail messages
+      description: Lists outbound mail messages.
+      operationId: listMailMessages
+      parameters:
+        - name: status
+          in: query
+          description: Message status.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of messages.
+          schema:
+            type: integer
+            maximum: 200
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /mail/messages/{message_id}:
+    get:
+      tags:
+        - Mail
+      summary: Get a mail message
+      description: Returns message status and details.
+      operationId: getMailMessage
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /mail/senders:
+    get:
+      tags:
+        - Mail
+      summary: List allowed mail senders
+      description: Returns the allowed sender list.
+      operationId: listMailSenders
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /mail/templates/{key}:
+    put:
+      tags:
+        - Mail
+      summary: Upsert a mail template
+      description: Creates or updates a mail template.
+      operationId: upsertMailTemplate
+      parameters:
+        - $ref: '#/components/parameters/TemplateKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailTemplateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /mail/templates:
+    get:
+      tags:
+        - Mail
+      summary: List mail templates
+      description: Returns available mail templates.
+      operationId: listMailTemplates
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /kddoc/link:
+    post:
+      tags:
+        - KDDoc
+      summary: Create a document link
+      description: Creates a time-limited document link.
+      operationId: createKddocLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenant_id
+                - key
+                - exp_days
+              properties:
+                tenant_id:
+                  type: string
+                key:
+                  type: string
+                exp_days:
+                  type: integer
+                  minimum: 1
+                  maximum: 3650
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /kddoc/link/revoke:
+    post:
+      tags:
+        - KDDoc
+      summary: Revoke a document link
+      description: Revokes a document link.
+      operationId: revokeKddocLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenant_id
+                - key
+              properties:
+                tenant_id:
+                  type: string
+                key:
+                  type: string
+                reason:
+                  type: string
+      responses:
+        '204':
+          description: Link revoked.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /kddoc/asset:
+    get:
+      tags:
+        - KDDoc
+      summary: Check document assets
+      description: Returns hashes of available assets.
+      operationId: getKddocAssets
+      parameters:
+        - $ref: '#/components/parameters/TenantIdRequired'
+        - name: sha256
+          in: query
+          description: Comma-separated SHA-256 hashes.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+  /kddoc/asset/{sha256}:
+    put:
+      tags:
+        - KDDoc
+      summary: Upload a document asset
+      description: Uploads a binary document asset of up to 12 MB.
+      operationId: putKddocAsset
+      parameters:
+        - $ref: '#/components/parameters/Sha256'
+        - $ref: '#/components/parameters/TenantIdRequired'
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: Asset uploaded.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          description: Asset exceeds 12 MB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /kddoc:
+    get:
+      tags:
+        - KDDoc
+      summary: List knowledge documents
+      description: Lists knowledge documents within a scope.
+      operationId: listKddocDocuments
+      parameters:
+        - $ref: '#/components/parameters/TenantIdRequired'
+        - name: scope
+          in: query
+          description: Document scope.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /kddoc/published:
+    get:
+      tags:
+        - KDDoc
+      summary: Get published document
+      description: Returns a published or draft document for a DSID.
+      operationId: getPublishedKddoc
+      parameters:
+        - name: dsid
+          in: query
+          description: Document source identifier.
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /kddoc/{scope}/{key}:
+    get:
+      tags:
+        - KDDoc
+      summary: Get a knowledge document
+      description: Returns a scoped knowledge document.
+      operationId: getKddoc
+      parameters:
+        - $ref: '#/components/parameters/Scope'
+        - $ref: '#/components/parameters/Key'
+        - $ref: '#/components/parameters/TenantIdRequired'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags:
+        - KDDoc
+      summary: Replace a knowledge document
+      description: Replaces a scoped knowledge document.
+      operationId: putKddoc
+      parameters:
+        - $ref: '#/components/parameters/Scope'
+        - $ref: '#/components/parameters/Key'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenant_id
+                - data
+              properties:
+                tenant_id:
+                  type: string
+                data:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '204':
+          description: Document replaced.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags:
+        - KDDoc
+      summary: Delete a knowledge document
+      description: Deletes a scoped knowledge document.
+      operationId: deleteKddoc
+      parameters:
+        - $ref: '#/components/parameters/Scope'
+        - $ref: '#/components/parameters/Key'
+        - $ref: '#/components/parameters/TenantIdRequired'
+      responses:
+        '204':
+          description: Document deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /kddoc/public/{token}:
+    get:
+      tags:
+        - KDDoc
+      summary: View a public document
+      description: Returns an HTML viewer for text/html requests or document JSON for application/json requests.
+      operationId: getPublicKddoc
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Token'
+      responses:
+        '200':
+          description: Public document.
+          content:
+            text/html:
+              schema:
+                type: string
+              example: '<html><body>Document</body></html>'
+            application/json:
+              schema:
+                type: object
+                required:
+                  - id
+                  - tenant_id
+                  - data
+                  - updated_at
+                properties:
+                  id:
+                    type: string
+                  tenant_id:
+                    type: string
+                  data:
+                    type: object
+                    additionalProperties: true
+                  updated_at:
+                    type: string
+                    format: date-time
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /kddoc/public/{token}/aktuell:
+    get:
+      tags:
+        - KDDoc
+      summary: Get current public document changes
+      description: Returns the current version and document changes.
+      operationId: getPublicKddocChanges
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Token'
+      responses:
+        '200':
+          $ref: '#/components/responses/GenericSuccess'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /kddoc/public/{token}/asset/{sha256}:
+    get:
+      tags:
+        - KDDoc
+      summary: Get a public document asset
+      description: Returns a public binary asset using its stored MIME type.
+      operationId: getPublicKddocAsset
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Token'
+        - $ref: '#/components/parameters/Sha256'
+      responses:
+        '200':
+          description: Binary asset.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
+  securitySchemes:
+    BearerAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+  parameters:
+    TenantId:
+      name: tenant_id
+      in: query
+      description: Tenant identifier.
+      schema:
+        type: string
+    TenantIdRequired:
+      name: tenant_id
+      in: query
+      description: Tenant identifier.
+      required: true
+      schema:
+        type: string
+    TripId:
+      name: trip_id
+      in: path
+      description: Trip identifier.
+      required: true
+      schema:
+        type: integer
+    BookingId:
+      name: booking_id
+      in: path
+      description: Booking identifier.
+      required: true
+      schema:
+        type: string
+    CustomerId:
+      name: customer_id
+      in: path
+      description: Customer identifier.
+      required: true
+      schema:
+        type: integer
+    PersonId:
+      name: person_id
+      in: path
+      description: Person identifier.
+      required: true
+      schema:
+        type: integer
+    NoteId:
+      name: note_id
+      in: path
+      description: Note identifier.
+      required: true
+      schema:
+        type: integer
+    Dataset:
+      name: dataset
+      in: path
+      description: Aggregate dataset name.
+      required: true
+      schema:
+        type: string
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor.
+      schema:
+        type: string
+    Limit500:
+      name: limit
+      in: query
+      description: Maximum number of results.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    Limit50:
+      name: limit
+      in: query
+      description: Maximum number of results.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 10
+    Limit2000:
+      name: limit
+      in: query
+      description: Maximum number of results.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2000
+        default: 200
+    Offset:
+      name: offset
+      in: query
+      description: Number of results to skip.
+      schema:
+        type: integer
+        minimum: 0
+    TripCode:
+      name: trip_code
+      in: query
+      description: Trip code.
+      schema:
+        type: string
+    TripCodeRequired:
+      name: trip_code
+      in: query
+      description: Trip code.
+      required: true
+      schema:
+        type: string
+    DepartureDateRequired:
+      name: departure_date
+      in: query
+      description: Departure date.
+      required: true
+      schema:
+        type: string
+        format: date
+    SurveyId:
+      name: survey_id
+      in: path
+      description: Survey identifier.
+      required: true
+      schema:
+        type: integer
+    Metric:
+      name: metric
+      in: path
+      description: Metric name.
+      required: true
+      schema:
+        type: string
+    RuleId:
+      name: rule_id
+      in: path
+      description: Rule identifier.
+      required: true
+      schema:
+        type: integer
+    First500:
+      name: first
+      in: query
+      description: Maximum number of results.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+    First5000:
+      name: first
+      in: query
+      description: Maximum number of results.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 5000
+    First1000:
+      name: first
+      in: query
+      description: Maximum number of results.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+    EmailPath:
+      name: email
+      in: path
+      description: Subscriber email address.
+      required: true
+      schema:
+        type: string
+        format: email
+    EmailRequired:
+      name: email
+      in: query
+      description: Inbox email address.
+      required: true
+      schema:
+        type: string
+        format: email
+    Endpoint:
+      name: endpoint
+      in: path
+      description: Webhook endpoint identifier.
+      required: true
+      schema:
+        type: string
+    ItemId:
+      name: item_id
+      in: path
+      description: Inbox item identifier.
+      required: true
+      schema:
+        type: integer
+    ReferenceKind:
+      name: kind
+      in: path
+      description: Reference data kind.
+      required: true
+      schema:
+        type: string
+    AssignmentId:
+      name: assignment_id
+      in: path
+      description: Assignment identifier.
+      required: true
+      schema:
+        type: integer
+    RunId:
+      name: run_id
+      in: path
+      description: Planning run identifier.
+      required: true
+      schema:
+        type: integer
+    MessageId:
+      name: message_id
+      in: path
+      description: Mail message UUID.
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TemplateKey:
+      name: key
+      in: path
+      description: Template key.
+      required: true
+      schema:
+        type: string
+    Sha256:
+      name: sha256
+      in: path
+      description: SHA-256 asset hash.
+      required: true
+      schema:
+        type: string
+    Scope:
+      name: scope
+      in: path
+      description: Knowledge document scope.
+      required: true
+      schema:
+        type: string
+    Key:
+      name: key
+      in: path
+      description: Knowledge document key.
+      required: true
+      schema:
+        type: string
+    Token:
+      name: token
+      in: path
+      description: Public document token.
+      required: true
+      schema:
+        type: string
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      description: Entity tag from a previous response.
+      schema:
+        type: string
+    FeedbackFilters:
+      name: tenant_id
+      in: query
+      description: Tenant identifier.
+      schema:
+        type: string
+  responses:
+    GenericSuccess:
+      description: Request completed successfully.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    BadRequest:
+      description: Invalid request, filter, cursor, or query.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid authentication.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: User has no access or operation is disabled.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource was not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Resource conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validation error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unavailable:
+      description: Service temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   schemas:
-    Document:
-      required:
-        - id
-        - name
-      properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        tag:
-          type: string
-    Documents:
-      type: array
-      items:
-        $ref: '#/components/schemas/Document'
-    Space:
-      required:
-        - id
-        - name
-      properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        tag:
-          type: string
-    Spaces:
-      type: array
-      items:
-        $ref: '#/components/schemas/Space'
     Error:
+      type: object
       required:
-        - code
-        - message
+        - detail
       properties:
+        detail:
+          type: string
         code:
+          type: string
+    TripSummary:
+      type: object
+      required:
+        - id
+        - code
+        - name
+        - category
+        - destination
+        - price
+        - duration
+        - rating
+        - is_new
+      properties:
+        id:
           type: integer
-          format: int32
-        message:
+        code:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        destination:
+          type: string
+        price:
+          type: number
+        duration:
+          type: integer
+        rating:
+          type: number
+        is_new:
+          type: boolean
+    Trip:
+      allOf:
+        - $ref: '#/components/schemas/TripSummary'
+        - type: object
+          required:
+            - tenant
+            - country_ids
+            - departure_dates
+          properties:
+            tenant:
+              type: string
+            ship:
+              type: string
+            country_ids:
+              type: array
+              items:
+                type: integer
+            departure_dates:
+              type: array
+              items:
+                type: string
+                format: date
+    Booking:
+      type: object
+      required:
+        - id
+        - trip_id
+        - customer_id
+        - status
+      properties:
+        id:
+          type: string
+        trip_id:
+          type: integer
+        customer_id:
+          type: integer
+        status:
+          type: string
+        participants:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        invoices:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        services:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        address:
+          type: object
+          additionalProperties: true
+        club_member:
+          type: object
+          additionalProperties: true
+    Customer:
+      type: object
+      required:
+        - customer_id
+        - is_internal
+        - persons
+        - bookings_summary
+        - address
+        - club_member
+      properties:
+        customer_id:
+          type: integer
+        is_internal:
+          type: boolean
+        persons:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+        bookings_summary:
+          type: object
+          additionalProperties: true
+        address:
+          type: object
+          additionalProperties: true
+        club_member:
+          type: object
+          additionalProperties: true
+    Person:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: integer
+        first_name:
+          type: string
+        last_name:
+          type: string
+    Note:
+      type: object
+      required:
+        - id
+        - entity_type
+        - entity_key
+        - author_oid
+        - author_name
+        - content
+        - origin
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        entity_type:
+          type: string
+        entity_key:
+          type: string
+        author_oid:
+          type: string
+        author_name:
+          type: string
+        flag:
+          type: string
+        content:
+          $ref: '#/components/schemas/NoteContent'
+        origin:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    NoteContent:
+      type: object
+      required:
+        - md
+      properties:
+        md:
+          type: string
+        ui:
+          type: object
+          additionalProperties: true
+    CreateNoteRequest:
+      type: object
+      required:
+        - entity_type
+        - entity_key
+        - content
+      properties:
+        entity_type:
+          type: string
+          enum:
+            - booking
+            - trip
+            - customer
+        entity_key:
+          type: string
+        tenant_id:
+          type: string
+        flag:
+          type: string
+        content:
+          $ref: '#/components/schemas/NoteContent'
+        origin:
+          type: object
+          additionalProperties: true
+        author_name:
+          type: string
+    UpdateNoteRequest:
+      type: object
+      properties:
+        flag:
+          type: string
+          nullable: true
+        content:
+          type: object
+          properties:
+            md:
+              type: string
+            ui:
+              type: object
+              additionalProperties: true
+    Survey:
+      type: object
+      required:
+        - id
+        - created_at
+        - last_changed_at
+        - departure
+        - trip_code
+        - trip_name
+        - dossier_number
+        - ratings
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        last_changed_at:
+          type: string
+          format: date-time
+        departure:
+          type: string
+          format: date-time
+        trip_code:
+          type: string
+        trip_name:
+          type: string
+        dossier_number:
+          type: integer
+        driver_first_name:
+          type: string
+        driver_last_name:
+          type: string
+        ratings:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    PaginatedResponse:
+      type: object
+      required:
+        - data
+        - next_cursor
+        - limit
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        next_cursor:
+          type: string
+          nullable: true
+        limit:
+          type: integer
+    PaginatedTripResponse:
+      type: object
+      required:
+        - data
+        - next_cursor
+        - limit
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripSummary'
+        next_cursor:
+          type: string
+          nullable: true
+        limit:
+          type: integer
+    PaginatedBookingResponse:
+      type: object
+      required:
+        - data
+        - next_cursor
+        - limit
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+        next_cursor:
+          type: string
+          nullable: true
+        limit:
+          type: integer
+    PaginatedSurveyResponse:
+      type: object
+      required:
+        - data
+        - next_cursor
+        - limit
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Survey'
+        next_cursor:
+          type: string
+          nullable: true
+        limit:
+          type: integer
+    DepartureList:
+      type: object
+      required:
+        - data
+        - limit
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required:
+              - trip_id
+              - trip_code
+              - name
+              - title
+              - departure_date
+              - return_date
+              - participant_count
+            properties:
+              trip_id:
+                type: integer
+              trip_code:
+                type: string
+              name:
+                type: string
+              title:
+                type: string
+              departure_date:
+                type: string
+                format: date
+              return_date:
+                type: string
+                format: date
+              participant_count:
+                type: integer
+        limit:
+          type: integer
+    TripRealization:
+      type: object
+      required:
+        - trip
+        - sample_booking
+        - providers
+        - service_counts
+      properties:
+        trip:
+          type: object
+          additionalProperties: true
+        sample_booking:
+          type: object
+          additionalProperties: true
+        providers:
+          type: object
+          additionalProperties: true
+        service_counts:
+          type: object
+          additionalProperties: true
+    SimilarTripsResponse:
+      type: object
+      required:
+        - trip_id
+        - data
+        - limit
+      properties:
+        trip_id:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TripSummary'
+        limit:
+          type: integer
+    BookingStatsResponse:
+      type: object
+      required:
+        - group_by
+        - data
+      properties:
+        group_by:
+          type: string
+        data:
+          type: array
+          items:
+            type: object
+            required:
+              - group_key
+              - bookings
+              - pax
+              - invoice_total
+              - paid_total
+            properties:
+              group_key:
+                type: string
+              bookings:
+                type: integer
+              pax:
+                type: integer
+              invoice_total:
+                type: number
+              paid_total:
+                type: number
+    DepartureCrew:
+      type: object
+      required:
+        - trip_code
+        - departure_date
+        - tenant_id
+        - tour_guides
+        - drivers
+      properties:
+        trip_code:
+          type: string
+        departure_date:
+          type: string
+          format: date
+        tenant_id:
+          type: string
+        tour_guides:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        drivers:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ManifestResponse:
+      type: object
+      required:
+        - trip_code
+        - departure_date
+        - data
+      properties:
+        trip_code:
+          type: string
+        departure_date:
+          type: string
+          format: date
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    CustomerBookingsResponse:
+      type: object
+      required:
+        - data
+        - customer_id
+        - limit
+        - offset
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        customer_id:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    BookingHotels:
+      type: object
+      required:
+        - booking_id
+        - trip_start
+        - hotels
+        - count
+      properties:
+        booking_id:
+          type: string
+        trip_start:
+          type: string
+          format: date
+        hotels:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        count:
+          type: integer
+    AggregateDescription:
+      type: object
+      required:
+        - datasets
+        - measures
+        - dimensions
+        - limits
+        - caller_policy
+      properties:
+        datasets:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        measures:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        dimensions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        limits:
+          type: object
+          additionalProperties: true
+        caller_policy:
+          type: object
+          additionalProperties: true
+    AggregateQueryRequest:
+      type: object
+      required:
+        - measures
+        - dimensions
+      properties:
+        measures:
+          type: array
+          items:
+            type: string
+        dimensions:
+          type: array
+          items:
+            type: string
+        filters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        time_range:
+          type: object
+          additionalProperties: true
+        cursor:
+          type: string
+        limit:
+          type: integer
+    AggregateQueryResponse:
+      type: object
+      required:
+        - dataset
+        - columns
+        - rows
+        - suppressed
+        - truncated
+        - next_cursor
+        - labels
+        - provenance
+      properties:
+        dataset:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        suppressed:
+          type: boolean
+        truncated:
+          type: boolean
+        next_cursor:
+          type: string
+          nullable: true
+        labels:
+          type: object
+          additionalProperties: true
+        provenance:
+          type: object
+          additionalProperties: true
+    AggregateValuesResponse:
+      type: object
+      required:
+        - dataset
+        - dimension
+        - time_range
+        - values
+        - truncated
+      properties:
+        dataset:
+          type: string
+        dimension:
+          type: string
+        time_range:
+          type: object
+          properties:
+            from:
+              type: string
+            to:
+              type: string
+        values:
+          type: array
+          items:
+            type: object
+            required:
+              - value
+              - label
+            properties:
+              value:
+                type: string
+              label:
+                type: string
+        truncated:
+          type: boolean
+    GraphResponse:
+      type: object
+      required:
+        - center
+        - nodes
+        - edges
+      properties:
+        center:
+          type: object
+          additionalProperties: true
+        nodes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        edges:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        bookings_total:
+          type: integer
+        departures_total:
+          type: integer
+    FeedbackRecommendationRequest:
+      type: object
+      required:
+        - filter_hash
+        - content
+      properties:
+        filter_hash:
+          type: string
+        content:
+          type: string
+        filters:
+          type: object
+          additionalProperties: true
+        scope_label:
+          type: string
+        model:
+          type: string
+        surveys_considered:
+          type: integer
+        tenant_id:
+          type: string
+    CreateAlertRuleRequest:
+      type: object
+      required:
+        - label
+        - metric
+        - threshold
+      properties:
+        label:
+          type: string
+        metric:
+          type: string
+        threshold:
+          type: number
+        description:
+          type: string
+        min_sample:
+          type: integer
+        tenant_id:
+          type: string
+        scope:
+          type: string
+        recipients:
+          type: array
+          items:
+            type: string
+        frequency:
+          type: string
+        template:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+        actor:
+          type: string
+    UpdateAlertRuleRequest:
+      type: object
+      properties:
+        label:
+          type: string
+        description:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+        threshold:
+          type: number
+        min_sample:
+          type: integer
+        recipients:
+          type: array
+          items:
+            type: string
+        frequency:
+          type: string
+        actor:
+          type: string
+    RuleConfirmation:
+      type: object
+      required:
+        - bestaetigt
+      properties:
+        bestaetigt:
+          type: boolean
+          enum:
+            - true
+        gesehene_treffer:
+          type: integer
+    AlertDryRunRequest:
+      type: object
+      required:
+        - metric
+        - threshold
+      properties:
+        metric:
+          type: string
+        threshold:
+          type: number
+        min_sample:
+          type: integer
+        tenant_id:
+          type: string
+        monate:
+          type: integer
+          minimum: 1
+          maximum: 36
+    InboxIdentity:
+      type: object
+      required:
+        - email
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+    SnoozeRequest:
+      allOf:
+        - $ref: '#/components/schemas/InboxIdentity'
+        - type: object
+          required:
+            - until
+          properties:
+            until:
+              type: string
+              format: date-time
+    DispoAssignmentRequest:
+      type: object
+      required:
+        - tenant_id
+        - trip_code
+        - departure_date
+        - staff_id
+        - role
+        - period
+        - status
+        - source
+        - decision
+      properties:
+        tenant_id:
+          type: string
+        trip_code:
+          type: string
+        departure_date:
+          type: string
+          format: date
+        staff_id:
+          type: string
+        role:
+          type: string
+        period:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+        source:
+          type: string
+        decision:
+          type: object
+          additionalProperties: true
+    MailMessageRequest:
+      type: object
+      required:
+        - idempotency_key
+        - sender
+        - recipients
+      properties:
+        idempotency_key:
+          type: string
+        sender:
+          type: string
+          format: email
+        recipients:
+          type: array
+          items:
+            type: string
+            format: email
+        reply_to:
+          type: string
+          format: email
+        subject:
+          type: string
+        body:
+          type: string
+        template_key:
+          type: string
+        template_variables:
+          type: object
+          additionalProperties: true
+        tenant_id:
+          type: string
+    MailTemplateRequest:
+      type: object
+      required:
+        - subject
+      properties:
+        subject:
+          type: string
+        text:
+          type: string
+        html:
+          type: string
+        tenant_id:
           type: string
