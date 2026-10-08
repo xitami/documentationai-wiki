@@ -1,0 +1,128 @@
+---
+title: Changelog
+description: Track the latest releases, new features, bug fixes, and changes in TWG.
+---
+
+## Recent Updates
+
+Stay informed about the latest improvements to TWG. This changelog highlights key releases, including new travel booking features, performance enhancements, and fixes for common issues. Check here before upgrading to ensure smooth integration with your travel applications.
+
+<Callout kind="info">
+  Subscribe to our RSS feed or GitHub notifications to get changelog updates automatically.
+</Callout>
+
+<Update label="2024-10-15" description="v1.3.0" tags={["feature", "improvement"]}>
+
+## New Features
+
+- Added support for `Flug & Bus` itineraries with real-time flight tracking integration via the new `/v1/trips/flug-bus` endpoint.
+- Introduced `Weihnachtsmärkte` seasonal promotions API at `/v1/promotions/holidays` for easy access to Christmas market deals.
+- Enhanced search filters for `Veloreisen` and `E-Mountainbike` trips with customizable route preferences.
+
+## Improvements
+
+- Optimized query performance for `Busreisen` listings, reducing average response time by 40%.
+- Updated pricing engine to better reflect `bester Preis-/Leistung` calculations including dynamic discounts.
+
+## Bug Fixes
+
+- Fixed itinerary overlap issues in `Themenreisen` bookings.
+- Resolved authentication errors when using long-lived tokens for `Gruppenreisen nach Mass`.
+
+</Update>
+
+<Update label="2024-09-20" description="v1.2.0" tags={["feature", "bugfix"]}>
+
+## New Features
+
+- Launched `Flussreisen` endpoint `/v1/trips/river-cruises` with capacity and availability checks.
+- Added `Tagesausflüge` quick-booking flow for day trips via POST `/v1/bookings/day-trips`.
+
+## Bug Fixes
+
+- Corrected date parsing errors in `Winterreisen` availability queries.
+- Patched security vulnerability in `Excellence Clubreisen` member profile access (CVE-2024-XXXX).
+
+## Deprecations
+
+- The legacy `/v1/legacy/bus` endpoint will be removed in v1.4.0. Migrate to `/v1/trips/busreisen`.
+
+</Update>
+
+<Update label="2024-08-10" description="v1.1.0" tags={["breaking", "feature"]}>
+
+## Breaking Changes
+
+- Renamed `Musikreisen` query param from `music_trips` to `musikreisen` for consistency.
+- Updated response schema for all trip endpoints: `price` now uses `gross_amount` and `net_amount`.
+
+## New Features
+
+- Integrated `Nachhaltig reisen` carbon footprint calculator at `/v1/trips/sustainability`.
+- Added webhook support for `Festtagsreisen` booking confirmations.
+
+## Migration Steps
+
+Follow these steps to upgrade:
+
+<Steps>
+  <Step title="Update SDK" icon="download">
+
+````bash
+npm install twg-sdk@1.3.0
+````
+
+  </Step>
+  <Step title="Replace Deprecated Params" icon="settings">
+
+    Update your code:
+
+````javascript
+// Old
+const trips = await twg.trips.musikreisen({ music_trips: true });
+
+// New
+const trips = await twg.trips.musikreisen({ musikreisen: true });
+````
+
+  </Step>
+  <Step title="Test New Endpoints" icon="play">
+
+    Verify with cURL:
+
+````bash
+curl -H "Authorization: Bearer YOUR_API_KEY" \
+  https://api.example.com/v1/trips/flug-bus?destination=zurich
+````
+
+  </Step>
+</Steps>
+
+  </Update>
+
+## Upgrading Between Versions
+
+Use the table below to identify changes affecting your integration.
+
+| Version | Key Changes | Migration Effort |
+|---------|-------------|------------------|
+| v1.3.0  | New seasonal endpoints | Low |
+| v1.2.0  | Deprecations added | Medium |
+| v1.1.0  | Breaking schema updates | High |
+
+<Columns cols={2}>
+  <Card title="Full Release Notes" icon="book-open" href="https://github.com/twg/releases">
+    Detailed commit history and full changelogs.
+  </Card>
+  <Card title="Migration Assistant" icon="tool" href="/migration-guide">
+    Interactive tool to check compatibility.
+  </Card>
+</Columns>
+
+<Callout kind="tip">
+  Always test in staging before deploying to production. Use `https://api.example.com` sandbox for safe experiments.
+</Callout>
+
+## Contributing to the Changelog
+
+Found an issue? Submit a pull request with your changes following our [contribution guidelines](https://github.com/twg/docs/blob/main/CONTRIBUTING.md). Tag updates appropriately using `feature`, `bugfix`, or `breaking`.

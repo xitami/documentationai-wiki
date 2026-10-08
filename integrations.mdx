@@ -1,0 +1,180 @@
+---
+title: Integrations
+description: Connect TWG with your favorite tools and services to streamline your documentation workflow.
+---
+
+## Overview
+
+TWG supports seamless integrations with popular tools to enhance your documentation workflow. Sync changes with version control, export content in various formats, embed pages in your sites, set up webhooks for real-time updates, and use third-party authentication providers.
+
+<Columns cols={3}>
+  <Card title="Version Control" icon="git-branch" href="#version-control">
+    Sync your docs with GitHub or GitLab repositories.
+  </Card>
+  <Card title="Exports" icon="download" href="#exports">
+    Generate PDF or Markdown files from your documentation.
+  </Card>
+  <Card title="Webhooks" icon="zap" href="#webhooks">
+    Receive notifications on content updates.
+  </Card>
+  <Card title="Embedding" icon="code" href="#embedding">
+    Embed TWG pages in your websites or apps.
+  </Card>
+  <Card title="Auth Providers" icon="shield" href="#auth-providers">
+    Integrate with OAuth providers like Google or GitHub.
+  </Card>
+</Columns>
+
+## Version Control Sync
+
+Connect TWG to GitHub for automatic syncing of your documentation. Push changes to your repo, and TWG pulls updates in real-time.
+
+<Steps>
+  <Step title="Create Repository" icon="repo">
+    Set up a new GitHub repository for your docs.
+  </Step>
+  <Step title="Connect TWG" icon="link">
+    In TWG settings, enter your repo URL: `https://github.com/your-org/your-docs`.
+  </Step>
+  <Step title="Configure Webhook" icon="settings">
+    Add a GitHub webhook pointing to your TWG sync endpoint.
+  </Step>
+  <Step title="Sync Changes" icon="git-commit">
+    Push commits to trigger automatic updates.
+  </Step>
+</Steps>
+
+<Callout kind="tip">
+  Enable branch protection in GitHub to ensure only approved changes sync to TWG.
+</Callout>
+
+## Export Options
+
+Export your TWG documentation to PDF or Markdown for sharing or archiving.
+
+<Tabs>
+  <Tab title="PDF" icon="file-text">
+    Use the export API to generate PDFs.
+
+    <CodeGroup tabs="cURL,JavaScript">
+      ```bash
+      curl -X POST https://api.example.com/v1/docs/export/pdf \
+        -H "Authorization: Bearer YOUR_API_KEY" \
+        -d '{"docId": "your-doc-id"}'
+      ```
+      ```javascript
+      const response = await fetch('https://api.example.com/v1/docs/export/pdf', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer YOUR_API_KEY',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ docId: 'your-doc-id' })
+      });
+      const pdfUrl = await response.json();
+      ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Markdown" icon="markdown">
+    Export as clean Markdown files.
+
+    <CodeGroup tabs="cURL,Python">
+      ```bash
+      curl -X POST https://api.example.com/v1/docs/export/md \
+        -H "Authorization: Bearer YOUR_API_KEY"
+      ```
+      ```python
+      import requests
+      response = requests.post(
+          'https://api.example.com/v1/docs/export/md',
+          headers={'Authorization': 'Bearer YOUR_API_KEY'}
+      )
+      markdown = response.text
+      ```
+    </CodeGroup>
+  </Tab>
+</Tabs>
+
+## Embedding TWG Pages
+
+Embed interactive TWG documentation in your website using an iframe.
+
+```html
+<iframe
+  src="https://docs.example.com/embed/your-doc-id"
+  width="100%"
+  height="600"
+  frameborder="0">
+</iframe>
+```
+
+Customize with query params like `?theme=dark&readOnly=true`.
+
+## Webhooks for Updates
+
+Set up webhooks to notify external services when your docs change.
+
+<Request show-lines="true">
+  ```javascript
+  // Payload sent to your webhook URL
+  await fetch('https://your-webhook-url.com/twgdocs', {
+    method: 'POST',
+    body: JSON.stringify({
+      event: 'doc.updated',
+      docId: 'abc123',
+      version: '1.2.3',
+      timestamp: '2024-01-15T10:30:00Z'
+    })
+  });
+  ```
+</Request>
+
+<Response tabs="200,400">
+  ```json
+  {
+    "status": "received",
+    "event": "doc.updated"
+  }
+  ```
+
+  ```json
+  {
+    "error": "Invalid signature"
+  }
+  ```
+</Response>
+
+<ParamField header="X-TWG-Signature" param-type="string" required="true">
+  HMAC SHA-256 signature of the payload using your webhook secret.
+</ParamField>
+
+## Third-party Auth Providers
+
+Integrate OAuth providers for user authentication.
+
+<Expandable title="Google OAuth Setup" default-open="true">
+  1. Register your app in Google Cloud Console.
+  2. Add client ID and secret to TWG settings.
+  3. Redirect users to `https://api.example.com/auth/google`.
+</Expandable>
+
+<Expandable title="GitHub OAuth">
+  Configure scopes: `user:email, repo`.
+</Expandable>
+
+<Board title="Integration Status">
+  <BoardColumn title="Live" color="2" icon="check-circle">
+    <BoardCard title="GitHub Sync" description="Full two-way sync" icon="git-branch" />
+    <BoardCard title="PDF Export" description="On-demand generation" icon="file-text" />
+  </BoardColumn>
+  <BoardColumn title="Beta" color="1" icon="loader">
+    <BoardCard title="Slack Notifications" description="Real-time alerts" icon="message-circle" />
+  </BoardColumn>
+  <BoardColumn title="Planned" color="0" icon="circle">
+    <BoardCard title="Notion Import" dueDate="2025-03-01" icon="notion" />
+  </BoardColumn>
+</Board>
+
+<Callout kind="info">
+  Check the TWG dashboard for the latest integration status and setup guides.
+</Callout>
