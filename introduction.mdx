@@ -1,42 +1,47 @@
 ---
 title: Introduction to TWG
-description: Landing page with an overview of TWG, its key features for managing project documentation, and quick navigation to get started.
+description: Overview of TWG's travel technology platform covering data sync, analytics, dossier generation, review insights, and shared application infrastructure.
 ---
 
 <Image src="https://blob-cdn.documentation.ai/org-2ebb2ef5-dd91-493f-9938-283fbdb14c81/doc-d2a73d2e-4391-4446-a5c8-2d0b41b7c4c1/1774416332529-4tjutjn9snw-Image-2.png?q=85&fm=auto&auto=compress%2Cformat" alt="TWG documentation" width="800" height="400" />
 
 ## Welcome to TWG
 
-TWG provides your default documentation space to organize and manage project documentation efficiently. Reisen in guter Gesellschaft – bester Preis-/Leistung.
+TWG's travel technology platform connects data synchronization, operational analytics, document generation, and guest feedback analysis into an integrated workflow for travel operations. Four product areas work together:
+
+- **TourData Mirror:** Synchronizes trip, booking, and disposition data from upstream systems, exposing it through aggregate APIs and MCP tools for reporting and integration.
+- **KD Dossier:** Generates travel documents and PDF exports from mirrored data, ensuring the exported document matches what editors see in the application.
+- **Review Analytics:** Analyzes questionnaire results and guest feedback across trips, with year-over-year comparisons, top/flop rankings, and AI-assisted report generation.
+- **Fullstack Starter:** Provides shared authentication, navigation, entity notes, and a versioned API that all TWG applications build on.
 
 ## Key Features
 
 <Columns cols={2}>
-  <Card title="Centralized Documentation" icon="book-open" href="/quickstart">
-    Organize all your travel project docs, from busreisen to flussreisen, in one intuitive hub.
+  <Card title="Travel Data Sync" icon="refresh-cw" href="/features#travel-data-sync">
+    Nightly full sync plus frequent refresh for imminent trips, with disposition-to-trip linking.
   </Card>
-  <Card title="Easy Navigation" icon="menu" href="#">
-    Quick access to reiseziele, rund ums reisen, and specialized sections like preise & rabatte.
+  <Card title="Aggregate Analytics" icon="bar-chart-3" href="/features#aggregate-analytics">
+    Vehicle, staff, departure, booking, and feedback datasets with API and MCP tool access.
   </Card>
-  <Card title="Rich Content Tools" icon="edit-3" href="#">
-    Use visual components to create engaging pages for tagesausflüge, themenreisen, and more.
+  <Card title="Dossier Generation" icon="file-text" href="/features#dossier-generation">
+    PDF exports that inherit the editor's document state, with dossier-specific departure locations.
   </Card>
-  <Card title="Customizable Workspace" icon="settings" href="#">
-    Tailor your space for gruppenreisen, excellence clubreisen, or any project needs.
+  <Card title="Review Analytics" icon="star" href="/features#review-analytics">
+    Questionnaire analysis with 250-question support, year-over-year comparisons, and Copilot prompts.
   </Card>
 </Columns>
 
 ## Explore TWG
 
 <Columns cols={2}>
-  <Card title="Quickstart" icon="zap" href="/quickstart" horizontal>
-    Get up and running with your first documentation project in minutes.
+  <Card title="Features" icon="layers" href="/features" horizontal>
+    Detailed overview of each product area and its capabilities.
   </Card>
-  <Card title="Authentication" icon="shield" href="/authentication" horizontal>
-    Secure access to manage and collaborate on sensitive travel documentation.
+  <Card title="Changelog" icon="git-branch" href="/changelog" horizontal>
+    Recent product updates and breaking changes across the platform.
   </Card>
 </Columns>
 
-<Callout kind="tip">
-  This documentation was generated as a starter kit. Customize the content to match your product.
+<Callout kind="info">
+  This documentation covers the current state of TWG's travel technology platform. Check the changelog for recent updates and breaking changes.
 </Callout>

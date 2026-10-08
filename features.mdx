@@ -1,122 +1,246 @@
 ---
 title: Core Features
-description: Discover the core features of TWG that enable efficient organization and management of project documentation.
+description: Explore TWG's travel technology platform — data sync, aggregate analytics, dossier generation, review insights, and shared application infrastructure.
 ---
 
 ## Overview
 
-TWG provides powerful tools to organize, collaborate on, and maintain your project documentation. You can structure content hierarchically, work with teams in real time, track changes, search efficiently, and apply professional templates. These features streamline your workflow from initial setup to ongoing updates.
+TWG's travel technology platform supports the full travel operations workflow, from synchronizing trip data to generating customer-facing documents and analyzing guest feedback. Each product area provides focused tools for operational reporting, document production, review analysis, and shared application workflows.
 
 <Columns cols={3}>
-  <Card title="Document Hierarchy" icon="folder" href="#document-hierarchy">
-    Organize content into nested folders and pages for intuitive navigation.
+  <Card title="Travel Data Sync" icon="refresh-cw" href="#travel-data-sync">
+    Mirror trip, booking, and disposition data with nightly and frequent sync schedules.
   </Card>
-  <Card title="Real-time Collaboration" icon="users" href="#real-time-collaboration">
-    Edit documents simultaneously with your team.
+  <Card title="Aggregate Analytics" icon="bar-chart-3" href="#aggregate-analytics">
+    Query vehicle, staff, departure, booking, and feedback datasets through APIs or MCP tools.
   </Card>
-  <Card title="Version History" icon="git-branch" href="#version-history">
-    Review and restore previous versions easily.
+  <Card title="Dossier Generation" icon="file-text" href="#dossier-generation">
+    Produce travel documents and PDFs that match the editor's current state.
   </Card>
-  <Card title="Search and Filtering" icon="search" href="#search-filtering">
-    Find content quickly with advanced search tools.
+  <Card title="Review Analytics" icon="star" href="#review-analytics">
+    Analyze questionnaire results, track trends, and generate AI-assisted reports.
   </Card>
-  <Card title="Templates" icon="file-text" href="#templates-formatting">
-    Start with pre-built templates and rich formatting.
+  <Card title="Shared Platform" icon="layout" href="#shared-platform">
+    Reuse authentication, navigation, and entity notes across TWG applications.
   </Card>
 </Columns>
 
-## Document Hierarchy and Folders
+## Travel Data Sync
 
-Create a clear structure for your documentation using nested folders. You define a root workspace, add subfolders for categories like guides or APIs, and nest pages within them. This mirrors your project's architecture.
+TourData Mirror synchronizes travel data from upstream systems into a local mirror for reporting and API access. The mirror stores trip, booking, and disposition data so downstream applications can query a consistent local representation.
 
-```mermaid
-graph TD
-    A[Workspace Root] --> B[Guides]
-    A --> C[API Reference]
-    B --> D[Quickstart]
-    B --> E[Best Practices]
-    C --> F[Endpoints]
-    C --> G[Authentication]
-```
+Two sync schedules keep the mirror current:
 
-<Callout kind="tip">
-  Use descriptive folder names and limit nesting to three levels for optimal navigation.
+- **Nightly full sync:** Refreshes the complete trip, booking, and disposition catalog overnight.
+- **Frequent imminent-trip sync:** Refreshes trips departing within 7 days and currently running trips every 30 minutes during business hours in the development environment.
+
+<Callout kind="info">
+
+Frequent trip sync is currently enabled in the development environment only.
+
 </Callout>
 
-## Real-time Collaboration
+Disposition-to-trip linking uses three levels of precedence:
 
-Invite team members to co-edit documents live. Changes appear instantly, with cursors showing who is editing what. Resolve conflicts automatically or discuss via integrated comments.
+1. Use the planned trip returned by the upstream API.
+2. If more than 50% of dossiers share a trip, use the majority-dossier match.
+3. If neither match is available, use an exact title or code match.
+
+The mirror stores planned and booked trip views separately. This distinction preserves the upstream plan while allowing reporting to reflect the trip associated with each booking.
+
+## Aggregate Analytics
+
+The aggregate API provides queryable datasets for operational reporting across vehicles, staff, departures, bookings, and feedback.
+
+| Dataset | Measures | Key dimensions |
+| --- | --- | --- |
+| `vehicle_days` | `full_days`, `half_days`, `operating_days` | `day`, `week`, `month`, `year`, `brand`, `trip` |
+| `staff_days` | Staff counts | `day`, `week`, `month`, `year`, `role`, `category`, `vehicle` |
+| `departures` | `departures`, `pax` | `day`, `week`, `month`, `year`, `brand`, `trip`, `country` |
+| `bookings` | `bookings`, `pax` | `day`, `week`, `month`, `year`, `brand`, `trip`, `status` |
+| `feedback` | `avg_rating`, `NPS` | `day`, `week`, `month`, `year`, `brand`, `trip`, `question` |
+
+### Query interfaces
 
 <Tabs>
-  <Tab title="Invite Collaborators" icon="user-plus">
-    Share a document link or add emails directly. Set permissions: view, edit, or admin.
+  <Tab title="API" icon="code">
+
+  REST endpoints support three core operations:
+
+  - List available aggregate datasets.
+  - Query a dataset by measures, dimensions, filters, and date bounds.
+  - Retrieve valid values for dimensions such as brands, trips, countries, categories, and questions.
+
+  ```bash
+  curl "https://travel.example.test/api/v1/aggregates/vehicle_days?from=2025-01-01&to=2025-03-31&dimensions=month,brand&measures=operating_days" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+  ```
+
+  <CodeGroup tabs="JavaScript,Python">
+  ```javascript
+  const response = await fetch(
+    "https://travel.example.test/api/v1/aggregates/vehicle_days?from=2025-01-01&to=2025-03-31&dimensions=month,brand&measures=operating_days",
+    {
+      headers: {
+        Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+      }
+    }
+  );
+
+  const data = await response.json();
+  console.log(data);
+  ```
+
+  ```python
+  import requests
+
+  response = requests.get(
+      "https://travel.example.test/api/v1/aggregates/vehicle_days",
+      headers={
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+      },
+      params={
+          "from": "2025-01-01",
+          "to": "2025-03-31",
+          "dimensions": "month,brand",
+          "measures": "operating_days",
+      },
+  )
+
+  response.raise_for_status()
+  print(response.json())
+  ```
+  </CodeGroup>
+
   </Tab>
-  <Tab title="Live Editing" icon="edit-3">
-    See real-time updates and use `@mentions` for notifications.
+
+  <Tab title="MCP Tools" icon="terminal">
+
+  MCP clients can use these tools to query aggregate data:
+
+  - `list_aggregates`
+  - `query_aggregates`
+  - `aggregate_values`
+  - `get_departure_dispositions`
+
+  Use `format="analytics"` with supported queries to return chart-oriented responses that include typed columns and units.
+
+  ```json
+  {
+    "tool": "query_aggregates",
+    "arguments": {
+      "dataset": "departures",
+      "measures": ["departures", "pax"],
+      "dimensions": ["month", "brand"],
+      "from": "2025-01-01",
+      "to": "2025-03-31",
+      "format": "analytics"
+    }
+  }
+  ```
+
   </Tab>
 </Tabs>
 
-## Version History
+### Query behavior and limits
 
-Every edit creates a new version. You access the full history, compare changes, and revert if needed. Branching allows experimental edits without affecting the main document.
+- `vehicle_days` queries with the `day` dimension support up to 366 days.
+- Other datasets support a maximum range of 92 days.
+- Bookings queries without a status filter return non-cancelled bookings by default.
+- Aggregate responses include human-readable labels for brands, trips, countries, categories, and questions.
+- Destination country values use ISO 3166-1 alpha-2 codes.
+- The values endpoint accepts optional date bounds. When omitted, it defaults to a one-year window.
+
+<Callout kind="tip">
+
+Use `format="analytics"` when a result feeds a chart. Typed columns and units let visualization clients render measures without inferring their meaning from raw values.
+
+</Callout>
+
+## Dossier Generation
+
+KD Dossier generates travel documents and PDF exports from mirrored booking and trip data. Exported documents use the same state that editors see, including changes made at both travel and departure levels.
+
+### Export workflow
 
 <Steps>
-  <Step title="View History" icon="clock">
-    Click the history icon in the toolbar to open the version panel.
+  <Step title="Use the editor state" icon="edit">
+
+  The export inherits the current document state from the editor, including travel-level and departure-level changes.
+
   </Step>
-  <Step title="Compare Versions" icon="git-compare">
-    Select two versions to see a side-by-side diff.
+  <Step title="Refresh saved dossier data" icon="refresh-cw">
+
+  Saved dossiers refresh with current booking data before export so the generated document reflects the latest mirrored information.
+
   </Step>
-  <Step title="Restore Version" icon="refresh-cw">
-    Choose a version and click restore to apply it.
+  <Step title="Resolve departure locations" icon="map-pin">
+
+  Each booking uses its own boarding location instead of the trip's first departure point. Arrival text also references the booked departure location.
+
+  </Step>
+  <Step title="Generate the export" icon="file-text">
+
+  The system validates the request and produces the travel document or PDF using the resolved data.
+
   </Step>
 </Steps>
 
-## Search and Filtering
+### Export validation
 
-Search across all documents with full-text indexing. Filter by tags, authors, or dates. Advanced operators like `tag:api` or `author:john` refine results.
+Cross-tenant exports return HTTP 403 instead of generating a document with the wrong brand. Invalid requests return meaningful error messages rather than an empty PDF or a generic HTTP 503 response.
 
-| Filter Type | Example Query | Result |
-|-------------|---------------|--------|
-| Tags       | `tag:feature` | Pages tagged "feature" |
-| Authors    | `author:alice`| Content by Alice |
-| Date Range | `date:>2024-01-01` | Recent updates |
+### Editor capabilities
 
-## Templates and Formatting
+Deleted sections can be restored after reloading, and the restored sections return to their original position. Block actions target blocks by stable key, preventing edits from applying to the wrong block when hidden or grouped blocks change their visible position.
 
-Start new pages from templates like API docs or changelogs. Rich formatting includes headings, code blocks, tables, and embeds.
+## Review Analytics
 
-<CodeGroup tabs="Markdown,Rich Text">
-  ```markdown
-  ## Heading
+Review Analytics provides questionnaire and guest feedback analysis across trips and departures.
 
-  - List item
-  - Another item
+<Columns cols={2}>
+  <Card title="Questionnaire Analytics" icon="bar-chart-3">
+    Analyze up to 250 questions, aggregate yes/no responses, and group results using sections defined by each questionnaire.
+  </Card>
+  <Card title="Year-over-Year" icon="trending-down">
+    Compare question groups over time with delta indicators and decline warnings.
+  </Card>
+  <Card title="Top / Flop Trips" icon="star">
+    Rank trips by NPS or average rating and apply minimum response filters.
+  </Card>
+  <Card title="Reviews by Question" icon="list">
+    Switch between the guest view and a per-question view with sentiment distribution.
+  </Card>
+  <Card title="Copilot Prompts" icon="sparkles">
+    Use predefined PDF report prompts for reports, themes, questionnaires, free text, and trends.
+  </Card>
+  <Card title="Dossier Numbers" icon="file-text">
+    Display the dossier number with guest information in review details.
+  </Card>
+</Columns>
 
-  `Inline code`
-  ```
+<Expandable title="Dashboard redesign" default-open="false">
 
-  ```html
-  <h2>Heading</h2>
-  <ul>
-    <li>List item</li>
-    <li>Another item</li>
-  </ul>
-  <code>Inline code</code>
-  ```
-</CodeGroup>
+The redesigned dashboard uses a common application shell and a filter bar with chips for active selections. Trip selection is unified across views: click a row to filter the dashboard, or use the external-link action to open the trip.
 
-<Expandable title="Advanced Formatting Options" default-open="false">
-  Embed images, videos, or custom components. Use `{variable}` syntax for dynamic content in templates.
+The redesign also standardizes icons and uses Swiss spelling across the interface.
 
-  ```javascript
-  const config = {
-    theme: 'dark',
-    features: ['collaboration', 'search']
-  };
-  ```
 </Expandable>
 
-<Callout kind="success">
-  Explore templates in the dashboard to accelerate your setup.
+## Shared Platform
+
+The fullstack starter provides shared infrastructure for TWG applications. These components keep common identity, navigation, notes, and API behavior consistent across products.
+
+| Component | Purpose |
+| --- | --- |
+| Entity Notes | Attach notes to bookings, trips, and customers, with notes shared across applications. |
+| App Switcher | Navigate across applications using environment-aware URLs. |
+| User Menu | Display the current identity and provide logout behavior. |
+| Entra ID Auth | Renew sessions silently and recover automatically from expired tokens. |
+| Versioned API | Expose domain endpoints under `/api/v1/` while reserving `/api/v2/` for future changes. |
+
+<Callout kind="alert">
+
+Existing integrations that use `/api/...` must update their requests to `/api/v1/...`. The versioned path is a breaking API change.
+
 </Callout>

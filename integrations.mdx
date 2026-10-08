@@ -1,180 +1,168 @@
 ---
 title: Integrations
-description: Connect TWG with your favorite tools and services to streamline your documentation workflow.
+description: Connect TWG products through MCP tools, versioned APIs, Entra ID authentication, shared components, and centralized AI configuration.
 ---
 
 ## Overview
 
-TWG supports seamless integrations with popular tools to enhance your documentation workflow. Sync changes with version control, export content in various formats, embed pages in your sites, set up webhooks for real-time updates, and use third-party authentication providers.
+TWG products integrate through shared infrastructure and standard protocols. Applications connect to TourData Mirror through REST APIs and MCP tools, authenticate through Microsoft Entra ID, share data through entity notes, and centralize AI model configuration through an optional Mirror integration.
 
 <Columns cols={3}>
-  <Card title="Version Control" icon="git-branch" href="#version-control">
-    Sync your docs with GitHub or GitLab repositories.
+  <Card title="MCP Tools" icon="terminal" href="#mcp-tools">
+
+  Query aggregate datasets and dispositions through Model Context Protocol tools.
+
   </Card>
-  <Card title="Exports" icon="download" href="#exports">
-    Generate PDF or Markdown files from your documentation.
+  <Card title="REST API" icon="code" href="#rest-api">
+
+  Use versioned domain endpoints under `/api/v1/` for application integration.
+
   </Card>
-  <Card title="Webhooks" icon="zap" href="#webhooks">
-    Receive notifications on content updates.
+  <Card title="Entra ID Auth" icon="shield" href="#entra-id-auth">
+
+  Renew sessions silently with automatic recovery from expired tokens.
+
   </Card>
-  <Card title="Embedding" icon="code" href="#embedding">
-    Embed TWG pages in your websites or apps.
+  <Card title="Entity Notes" icon="sticky-note" href="#entity-notes">
+
+  Share notes attached to bookings, trips, and customers across applications.
+
   </Card>
-  <Card title="Auth Providers" icon="shield" href="#auth-providers">
-    Integrate with OAuth providers like Google or GitHub.
+  <Card title="App Switcher" icon="grid" href="#app-switcher">
+
+  Navigate between applications with environment-aware URLs.
+
+  </Card>
+  <Card title="AI Configuration" icon="sparkles" href="#ai-configuration">
+
+  Centralize model and prompt settings through an optional Mirror integration.
+
   </Card>
 </Columns>
 
-## Version Control Sync
+## MCP tools
 
-Connect TWG to GitHub for automatic syncing of your documentation. Push changes to your repo, and TWG pulls updates in real-time.
+TourData Mirror exposes internal tools through the Model Context Protocol. MCP clients can query aggregate datasets, retrieve disposition details, and format responses for visualization.
+
+| Tool | Description |
+| --- | --- |
+| `list_aggregates` | List available aggregate datasets and their supported dimensions and measures. |
+| `query_aggregates` | Query a dataset by measures, dimensions, filters, and date bounds. |
+| `aggregate_values` | Retrieve valid values for dimensions such as brands, trips, countries, and categories. |
+| `get_departure_dispositions` | Return vehicles, trailers, drivers, and tour leaders for a trip and departure date. |
+
+Use `query_aggregates` with `format` set to `analytics` when the response will be consumed by an analytics or visualization client.
+
+<CodeGroup tabs="JSON">
+
+```json
+{
+  "tool": "query_aggregates",
+  "arguments": {
+    "dataset": "vehicle_days",
+    "measures": [
+      "full_days",
+      "half_days",
+      "operating_days"
+    ],
+    "dimensions": [
+      "month",
+      "brand"
+    ],
+    "from": "2025-01-01",
+    "to": "2025-12-31",
+    "format": "analytics"
+  }
+}
+```
+
+</CodeGroup>
+
+<Callout kind="info">
+
+Remote MCP exposes all internal tools to members of configured Entra groups. Identity fields come from the verified token, and remote calls are logged with the user OID, tool name, and result.
+
+</Callout>
+
+## REST API
+
+Domain API endpoints are versioned under `/api/v1/`. The versioned prefix reserves `/api/v2/` for future breaking changes.
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/api/v1/notes` | GET, POST, PATCH, DELETE | Create, read, update, and delete entity notes. |
+| `/api/v1/aggregates` | GET | List available aggregate datasets. |
+| `/api/v1/aggregates/{dataset}/query` | POST | Query a dataset by measures and dimensions. |
+| `/api/v1/aggregates/{dataset}/values` | GET | Retrieve valid values for a dataset's dimensions. |
+
+<Callout kind="alert">
+
+Domain endpoints moved from `/api/...` to `/api/v1/...`. Update integrations that call unversioned paths.
+
+</Callout>
+
+## Entra ID auth
+
+TWG applications authenticate through Microsoft Entra ID, formerly Azure AD, using MSAL. Sessions renew silently in the background. When silent renewal fails because a token expired, the application redirects to interactive login instead of leaving the user with an inactive session.
+
+<Expandable title="Token recovery behavior">
+
+When the SPA refresh-token lifetime expires, the MSAL error code `timed_out` triggers a redirect to interactive login. Users do not need to manually log out and log back in after returning to the application the next day.
+
+</Expandable>
+
+## Entity notes
+
+Entity notes are shared across TWG applications and can be attached to bookings, trips, and customers. Each note supports create, edit, delete, and mark-as-important actions, with author and timestamp metadata.
 
 <Steps>
-  <Step title="Create Repository" icon="repo">
-    Set up a new GitHub repository for your docs.
+  <Step title="Set the entity context">
+
+  The host application calls `twgShell.setEntityContext({ type, key })` to identify the entity associated with the notes view.
+
   </Step>
-  <Step title="Connect TWG" icon="link">
-    In TWG settings, enter your repo URL: `https://github.com/your-org/your-docs`.
+  <Step title="Normalize the entity key">
+
+  TWG normalizes entity keys to their canonical form. For example, booking identifiers are converted to DSID format.
+
   </Step>
-  <Step title="Configure Webhook" icon="settings">
-    Add a GitHub webhook pointing to your TWG sync endpoint.
+  <Step title="Use the notes API">
+
+  The notes API exposes `GET`, `POST`, `PATCH`, and `DELETE` operations at `/api/v1/notes`.
+
   </Step>
-  <Step title="Sync Changes" icon="git-commit">
-    Push commits to trigger automatic updates.
+  <Step title="Render notes in the host application">
+
+  Notes can display with optional attached UI cards. Without a card renderer, TWG displays the Markdown content as a fallback.
+
   </Step>
 </Steps>
 
+## App switcher
+
+The app switcher provides a cross-application navigation menu with environment-aware URLs. It detects the current environment from the hostname and can filter visible applications using an allowed-app list.
+
+<Expandable title="Configuration">
+
+The component supports these optional attributes:
+
+- **`current`**: Highlights the active application.
+- **`allowed`**: Filters the application list.
+- **`env`**: Overrides environment detection.
+- **`apps`**: Supplies a custom application registry.
+
+In development, omitting `allowed` shows all registered applications.
+
+</Expandable>
+
+## AI configuration
+
+Applications that include LLM functionality can centralize AI model and prompt configuration through an optional TourData Mirror integration. Settings resolve in this order: Mirror settings first, environment variables second, and code-level defaults last.
+
+If Mirror is unavailable or unconfigured, the application continues using its previous fallback behavior. Settings are cached for five minutes.
+
 <Callout kind="tip">
-  Enable branch protection in GitHub to ensure only approved changes sync to TWG.
-</Callout>
 
-## Export Options
+Register the model and prompt at the code level before configuring Mirror overrides. The application uses those registered values as the fallback when Mirror does not provide a setting.
 
-Export your TWG documentation to PDF or Markdown for sharing or archiving.
-
-<Tabs>
-  <Tab title="PDF" icon="file-text">
-    Use the export API to generate PDFs.
-
-    <CodeGroup tabs="cURL,JavaScript">
-      ```bash
-      curl -X POST https://api.example.com/v1/docs/export/pdf \
-        -H "Authorization: Bearer YOUR_API_KEY" \
-        -d '{"docId": "your-doc-id"}'
-      ```
-      ```javascript
-      const response = await fetch('https://api.example.com/v1/docs/export/pdf', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer YOUR_API_KEY',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ docId: 'your-doc-id' })
-      });
-      const pdfUrl = await response.json();
-      ```
-    </CodeGroup>
-  </Tab>
-  <Tab title="Markdown" icon="markdown">
-    Export as clean Markdown files.
-
-    <CodeGroup tabs="cURL,Python">
-      ```bash
-      curl -X POST https://api.example.com/v1/docs/export/md \
-        -H "Authorization: Bearer YOUR_API_KEY"
-      ```
-      ```python
-      import requests
-      response = requests.post(
-          'https://api.example.com/v1/docs/export/md',
-          headers={'Authorization': 'Bearer YOUR_API_KEY'}
-      )
-      markdown = response.text
-      ```
-    </CodeGroup>
-  </Tab>
-</Tabs>
-
-## Embedding TWG Pages
-
-Embed interactive TWG documentation in your website using an iframe.
-
-```html
-<iframe
-  src="https://docs.example.com/embed/your-doc-id"
-  width="100%"
-  height="600"
-  frameborder="0">
-</iframe>
-```
-
-Customize with query params like `?theme=dark&readOnly=true`.
-
-## Webhooks for Updates
-
-Set up webhooks to notify external services when your docs change.
-
-<Request show-lines="true">
-  ```javascript
-  // Payload sent to your webhook URL
-  await fetch('https://your-webhook-url.com/twgdocs', {
-    method: 'POST',
-    body: JSON.stringify({
-      event: 'doc.updated',
-      docId: 'abc123',
-      version: '1.2.3',
-      timestamp: '2024-01-15T10:30:00Z'
-    })
-  });
-  ```
-</Request>
-
-<Response tabs="200,400">
-  ```json
-  {
-    "status": "received",
-    "event": "doc.updated"
-  }
-  ```
-
-  ```json
-  {
-    "error": "Invalid signature"
-  }
-  ```
-</Response>
-
-<ParamField header="X-TWG-Signature" param-type="string" required="true">
-  HMAC SHA-256 signature of the payload using your webhook secret.
-</ParamField>
-
-## Third-party Auth Providers
-
-Integrate OAuth providers for user authentication.
-
-<Expandable title="Google OAuth Setup" default-open="true">
-  1. Register your app in Google Cloud Console.
-  2. Add client ID and secret to TWG settings.
-  3. Redirect users to `https://api.example.com/auth/google`.
-</Expandable>
-
-<Expandable title="GitHub OAuth">
-  Configure scopes: `user:email, repo`.
-</Expandable>
-
-<Board title="Integration Status">
-  <BoardColumn title="Live" color="2" icon="check-circle">
-    <BoardCard title="GitHub Sync" description="Full two-way sync" icon="git-branch" />
-    <BoardCard title="PDF Export" description="On-demand generation" icon="file-text" />
-  </BoardColumn>
-  <BoardColumn title="Beta" color="1" icon="loader">
-    <BoardCard title="Slack Notifications" description="Real-time alerts" icon="message-circle" />
-  </BoardColumn>
-  <BoardColumn title="Planned" color="0" icon="circle">
-    <BoardCard title="Notion Import" dueDate="2025-03-01" icon="notion" />
-  </BoardColumn>
-</Board>
-
-<Callout kind="info">
-  Check the TWG dashboard for the latest integration status and setup guides.
 </Callout>
