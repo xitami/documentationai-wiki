@@ -1,128 +1,179 @@
 ---
 title: Changelog
-description: Track the latest releases, new features, bug fixes, and changes in TWG.
+description: 'Track the latest releases, new features, bug fixes, and changes in TWG.'
 ---
-
 ## Recent Updates
 
-Stay informed about the latest improvements to TWG. This changelog highlights key releases, including new travel booking features, performance enhancements, and fixes for common issues. Check here before upgrading to ensure smooth integration with your travel applications.
+Track every TWG release across all repositories — TourData Mirror, Reisedokumente-Tool, and the Fullstack Starter. Each entry lists new features, improvements, and fixes, reconstructed from commit history and release tags.
 
-<Callout kind="info">
-  Subscribe to our RSS feed or GitHub notifications to get changelog updates automatically.
+<Callout kind="info" collapsed="false">
+  Future releases will be auto-generated via GitHub Release workflows. Existing tags predate the workflow — entries below are reconstructed from commit history.
 </Callout>
 
-<Update label="2024-10-15" description="v1.3.0" tags={["feature", "improvement"]}>
+<Update label="2026-10-05" description="tourdata-mirror v0.4.1" tags={["bugfix"]}>
+  ## Bug Fixes
 
-## New Features
-
-- Added support for `Flug & Bus` itineraries with real-time flight tracking integration via the new `/v1/trips/flug-bus` endpoint.
-- Introduced `Weihnachtsmärkte` seasonal promotions API at `/v1/promotions/holidays` for easy access to Christmas market deals.
-- Enhanced search filters for `Veloreisen` and `E-Mountainbike` trips with customizable route preferences.
-
-## Improvements
-
-- Optimized query performance for `Busreisen` listings, reducing average response time by 40%.
-- Updated pricing engine to better reflect `bester Preis-/Leistung` calculations including dynamic discounts.
-
-## Bug Fixes
-
-- Fixed itinerary overlap issues in `Themenreisen` bookings.
-- Resolved authentication errors when using long-lived tokens for `Gruppenreisen nach Mass`.
-
+  - Disposition API now returns 409 conflict responses as JSON instead of HTTP 500, improving error handling for concurrent dispo edits.
+  - Test teardown correctly cleans up `trip_requirement` records before tenants, preventing cascade failures in the test suite.
 </Update>
 
-<Update label="2024-09-20" description="v1.2.0" tags={["feature", "bugfix"]}>
+<Update label="2026-09-30" description="kd-doc v1.0.0 (in progress)" tags={["feature","improvement"]}>
+  ## Editor
 
-## New Features
+  - Deleted document sections can now be recovered after page reload. The "N blocks removed" panel persists, and restored blocks return to their original position in the template.
+  - Content insertion (⊕), AI text, and photo upload now target the correct block via engine key instead of position counting, fixing misplacement when hidden or bundled blocks shifted indices.
+  - Hidden blocks that are suppressed by rules are now bundled into a compact "N blocks hidden" row instead of showing gray placeholders individually.
 
-- Launched `Flussreisen` endpoint `/v1/trips/river-cruises` with capacity and availability checks.
-- Added `Tagesausflüge` quick-booking flow for day trips via POST `/v1/bookings/day-trips`.
+  ## PDF Export
 
-## Bug Fixes
+  - Dossier PDFs now inherit trip and departure versions exactly as the editor renders them. Previously, saved documents without their own version went to PDF fresh from the template, missing trip- and departure-level changes.
+  - Per-dossier departure location, time, and customer address are pulled from the Mirror, replacing the previous behavior of showing the first list location for all dossiers.
+  - Dossier and customer numbers are placed in the document header, matching the editor layout.
+  - Booklet covers (A5 print) are now available in brand look for seven trip types: flight, bike, e-mountainbike, winter, bus, music, and river cruises.
+  - Tenant validation prevents an Imbach trip from being exported with the Twerenbold brand. The export returns 403 with the correct brand name.
 
-- Corrected date parsing errors in `Winterreisen` availability queries.
-- Patched security vulnerability in `Excellence Clubreisen` member profile access (CVE-2024-XXXX).
+  ## Brand CD
 
-## Deprecations
+  - House colors and fonts now follow brand guidelines: Excellence uses gold and purple, Vögele uses dark and light green, and Imbach uses dark and light blue. Each brand now has an `accent2` color and embedded web fonts in PDF.
 
-- The legacy `/v1/legacy/bus` endpoint will be removed in v1.4.0. Migrate to `/v1/trips/busreisen`.
+  ## New Document Blocks
 
+  - "Ihre Sitzplätze im Reisebus" provides bus seat assignments with each passenger's name and seat number, plus a bus label for multi-bus departures.
+  - "Ihre Flüge" provides flight segments with dates, routes, times, aircraft, baggage, and PNR. Amadeus itinerary import via text or PDF paste is merged with Mirror data.
+  - A "Check-in" section for flight trips provides check-in times, calculated as two hours before departure, with the airline, flight number, and airport.
+
+  ## Mirror Integration
+
+  - Postal address from Mirror customer master sync (`customer_address` / `address`) replaces handwritten names with structured address data (VBCD-182).
+  - Travel club members no longer see the invitation block (VBCD-183).
 </Update>
 
-<Update label="2024-08-10" description="v1.1.0" tags={["breaking", "feature"]}>
+<Update label="2026-09-28" description="tourdata-mirror v0.4.0" tags={["feature","improvement"]}>
+  ## New Features
 
-## Breaking Changes
+  - **Aggregate API**: Self-describing read-only analytics datasets with query and values endpoints, filtering, dimensions, pagination, ETags, rate limiting, minimum-group suppression, and caller-specific access policies. Covers bookings, feedback, staff days, and vehicle days.
+  - **Event Pipeline**: CloudEvents and webhook contracts, per-endpoint subscriptions, HMAC signing, DNS and SSRF protection, fan-out, lane ordering, retries, backoff, dead-letter handling, and a development console mode.
+  - **Alert System**: Rule-based alerts with metrics, dry runs, activation safeguards, trigger history, deduplication and re-arm logic, JSON-defined metric packs, admin UI, MCP tools, previews, and histogram data for threshold selection.
+  - **Alert Channels & Inbox**: Alerts are integrated with the event pipeline for mail, webhook, and in-app inbox notifications. Users can subscribe, mute, read, acknowledge, and snooze alert items.
+  - **MCP Analytics**: Aggregate API tools with chart block output format. The remote MCP profile includes Entra token validation, group-based authorization, token-derived identity, audit logging, and protected-resource metadata.
+  - **Personnel Sync**: Authoritative personnel dimension from expanded Disposition and Address APIs with stable person IDs, source-mandant mapping, full personnel-list reconciliation, and status-9 deletion handling.
+  - **Customer Master Sync**: Scheduled Container Apps job for customer addresses, document-delivery preferences, and travel-club membership. Read APIs now expose customer address and club information without per-booking calls.
 
-- Renamed `Musikreisen` query param from `music_trips` to `musikreisen` for consistency.
-- Updated response schema for all trip endpoints: `price` now uses `gross_amount` and `net_amount`.
+  ## Improvements
 
-## New Features
+  - Trip hashes now cover only mirrored columns, avoiding spurious `trip.changed` events.
+  - Failed WebTrip detail requests no longer delete existing departure dates.
+  - Dossier survey pages are recursively salvaged after upstream HTTP 500 responses.
+  - CSV-created personnel are deactivated when absent from the authoritative personnel list.
+  - Feedback ratings are normalized and precomputed to avoid expensive JSONB scans. Destination countries are converted to ISO codes, and `pax` is added for group bookings.
+  - Production operations now include reliable migration-job polling during releases, CORS and origin configuration, enabled mail and dispo write gates, and always-on replicas restored after cold-start issues.
 
-- Integrated `Nachhaltig reisen` carbon footprint calculator at `/v1/trips/sustainability`.
-- Added webhook support for `Festtagsreisen` booking confirmations.
+  ## Breaking Changes
 
-## Migration Steps
+  - `DISPO_WRITE_ENABLED=true` is required for production RL-disposition writes.
+  - `KD_DOC_WRITE_ENABLED=true` is required for production kd-doc persistence.
+  - `MAIL_SEND_ENABLED=true`, Graph credentials, and an authorized sender are required for production mail.
+  - Event delivery requires `EVENTS_TRANSPORT=http` and endpoint secrets.
+</Update>
 
-Follow these steps to upgrade:
+<Update label="2026-09-28" description="tourdata-mirror v0.4.2" tags={["feature"]}>
+  ## New Features
 
-<Steps>
-  <Step title="Update SDK" icon="download">
+  - **Disposition portal**: Desired trips and desired countries now include trips marked "in planning", giving staff earlier visibility into upcoming travel options (#193).
+</Update>
 
-````bash
-npm install twg-sdk@1.3.0
-````
+<Update label="2026-08-28" description="tourdata-mirror v0.2.0" tags={["feature"]}>
+  ## New Features
 
-  </Step>
-  <Step title="Replace Deprecated Params" icon="settings">
+  - **Disposition Module**: The `dispo` schema provides application-owned planning data, raw `tourdata.dispo_*` source tables, matching rules, staffing requirements, planning runs, proposals, and decision logs.
+  - **RL-Dispo Portal**: Self-service preferences, languages, qualifications, desired months, avoided trips, self-imposed capacity limits, Magic Links, decision history, and trainee-guide roles.
+  - **Mail Service**: Centralized Mirror mail service with sender authorization, idempotency keys, outbox, delivery log, retry and backoff, PII retention, Graph transport, templates, branded HTML layouts, admin dashboard, and MCP `send_mail` tool.
+  - **kd-doc Pipeline**: Signed public document delivery without Entra login, HTML and JSON content negotiation, rate limiting, individual link revocation, content-addressed image storage, and bundled customer viewer.
+  - **Entity Notes & Graph Navigation**: Shared `workspace.entity_note` model and CRUD API for notes attached to bookings, trips, and customers. Generic entity graph API and MCP tools support cross-entity navigation.
+  - **MCP**: The `describe_schema` tool supports ad-hoc SQL column discovery instead of guessing.
 
-    Update your code:
+  ## Improvements
 
-````javascript
-// Old
-const trips = await twg.trips.musikreisen({ music_trips: true });
+  - Multi-tenant sync now uses tenant-specific cursors and missing-credential isolation, preventing one tenant failure from stopping others.
+  - Booking data now includes participant boarding information, crew phone numbers, and a hotel endpoint with nights and supplier addresses.
+  - Feedback now includes theme aspects, voices, and departure-specific filtering.
 
-// New
-const trips = await twg.trips.musikreisen({ musikreisen: true });
-````
+  ## Infrastructure
 
-  </Step>
-  <Step title="Test New Endpoints" icon="play">
+  - The release path was repaired. `build-image` now needs `environment` for OIDC authentication on tag-based deploys.
+  - Azure Functions deployment workflow now installs Core Tools reliably.
+  - Pre-push CI now runs a replica of repository checks.
 
-    Verify with cURL:
+  ## Breaking Changes
 
-````bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \
-  https://api.example.com/v1/trips/flug-bus?destination=zurich
-````
+  - The MCP dependency is capped below v2.0. MCP 2.0 removed `mcp.server.fastmcp`, which crashed the MCP container.
+</Update>
 
-  </Step>
-</Steps>
+<Update label="2026-07-29" description="tourdata-mirror v0.3.0" tags={["feature"]}>
+  <Callout kind="alert" collapsed="false">
+    Note: This tag was applied to an intermediate commit between v0.1.0 and v0.2.0. The features below were fully expanded in v0.2.0.
+  </Callout>
 
-  </Update>
+  ## New Features
+
+  - **Disposition Schema (Migration 0030)**: The `dispo` schema is open for all employee types, with `staff_ref` natural key, `staff_function`, and qualifications with ordered skill levels aligned to source tables `reisepersonal` and `reise_reiseleiter`.
+  - `tdm-migrate up --until` supports selective migration execution.
+  - Versioned schema file is generated rather than manually maintained.
+  - Disposition sync runs as a Container App Job with image rotation.
+  - The `btree_gist` extension is self-declared in migration, preventing GiST operator class errors on BIGINT ranges.
+</Update>
+
+<Update label="2026-07-26" description="tourdata-mirror v0.1.0" tags={["feature"]}>
+  ## Initial Release
+
+  - **Mirror Pipeline**: Dossier-API and Web-Trip-API data is mirrored into PostgreSQL with resumable, idempotent upserts, auth refresh, and ASC-cursor-sync. Data levels 1–3 include bookings, persons, participants, invoices, services, service items, and business partners.
+  - **Read-API**: FastAPI with Entra Bearer auth stub, Debug UI at `/debug`, and `list_bookings` with `dsid` filtering for exact dossier numbers and deep links.
+  - **MCP Server**: Read-only stdio server with 20 tools over the Read-API, including `get_trip_departures`, `get_booking_stats`, `search_bookings` (non-PII), `get_booking_manifest`, `get_customer`, and `get_customer_bookings` (PII, gated via Orchestrator manifest).
+  - **Azure Terraform**: Private-by-default infrastructure with Postgres Flex VNet integration, Key Vault and Storage with Private Endpoints, Function EP1 VNet integration, Container Apps environment, Log Analytics, App Insights, and alerts.
+  - Live verification against production covered 2,719 bookings, 12,240 services, and 187 enriched trips. The release included 149 passed tests and 22 skipped tests.
+</Update>
+
+<Update label="2026-07-22" description="fullstack-starter v0.2.0" tags={["feature"]}>
+  ## New Features
+
+  - **`<twg-user-menu>`**: Shared user menu web component with avatar, name, dropdown containing email, optional sublabel, and logout. The framework-agnostic component receives identity through attributes and emits logout as a CustomEvent. It shares `--tas-*` theme variables with the app switcher. The local `UserMenu.vue` was removed in favor of the shared component.
+</Update>
+
+<Update label="2026-07-20" description="fullstack-starter v0.1.0" tags={["feature"]}>
+  ## Initial Release
+
+  - **`@twg/auth-shell`****&#x20;package**: Shared navigation and login components for all TWG apps as Web Components, using Vue 3 `defineCustomElement`, self-contained ESM, and 37 kB gzip.
+  - **`<twg-app-switcher>`**: Waffle menu with TWG apps per environment. The registry includes local, dev, and prod URLs with environment detection from the hostname. Without the `allowed` attribute (dev stub), all apps are visible. The starter web app includes a reference integration.
+</Update>
 
 ## Upgrading Between Versions
 
-Use the table below to identify changes affecting your integration.
+TourData Mirror uses separate dev and prod environments with materially different infrastructure defaults, including replica counts, mail gates, event transport, alert sender, and model settings. Review the breaking changes in each release before deploying.
 
-| Version | Key Changes | Migration Effort |
-|---------|-------------|------------------|
-| v1.3.0  | New seasonal endpoints | Low |
-| v1.2.0  | Deprecations added | Medium |
-| v1.1.0  | Breaking schema updates | High |
+| Version         | Key Changes                                   | Migration Effort |
+| --------------- | --------------------------------------------- | ---------------- |
+| v0.4.1          | Dispo 409 JSON fix                            | Low              |
+| v0.4.0          | Aggregate API, events, alerts, personnel sync | High             |
+| v0.4.2          | Portal "in planning" trips                    | Low              |
+| v0.2.0          | Disposition, mail, kd-doc, entity notes       | High             |
+| v0.3.0          | Early dispo schema (subset of v0.2.0)         | Low              |
+| v0.1.0          | Initial mirror pipeline + Read-API + MCP      | —                |
+| v1.0.0 (kd-doc) | Editor, PDF export, brand CD, new blocks      | High             |
 
-<Columns cols={2}>
-  <Card title="Full Release Notes" icon="book-open" href="https://github.com/twg/releases">
-    Detailed commit history and full changelogs.
+<Columns cols="2">
+  <Card title="TourData Mirror Releases" href="https://github.com/twerenbold-group/twg-tourdata-mirror/releases" icon="book-open" horizontal="false">
+    Tags, commits, and CI workflows.
   </Card>
-  <Card title="Migration Assistant" icon="tool" href="/migration-guide">
-    Interactive tool to check compatibility.
+
+  <Card title="kd-doc Release Notes" href="https://github.com/twerenbold-group/twr-kd-doc/blob/main/CHANGELOG.md" icon="book-open" horizontal="false">
+    Full daily changelog for the Reisedokumente-Tool.
   </Card>
 </Columns>
 
-<Callout kind="tip">
-  Always test in staging before deploying to production. Use `https://api.example.com` sandbox for safe experiments.
+<Callout kind="tip" collapsed="false">
+  TourData Mirror has no `test` environment, only `dev` and `prod`. Always validate migrations and sync changes against dev before tagging a release.
 </Callout>
 
 ## Contributing to the Changelog
 
-Found an issue? Submit a pull request with your changes following our [contribution guidelines](https://github.com/twg/docs/blob/main/CONTRIBUTING.md). Tag updates appropriately using `feature`, `bugfix`, or `breaking`.
+Releases are tagged with `vX.Y.Z` on the main branch. TourData Mirror and kd-doc auto-generate GitHub Releases via CI. To add an entry, tag a release and the changelog will be updated in the next sync. Found an issue? Submit a pull request against the relevant repository.

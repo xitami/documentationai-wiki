@@ -135,50 +135,6 @@
         ]
       },
       {
-        "tab": "Help Center",
-        "icon": "help-circle",
-        "pages": [
-          {
-            "title": "Help Center",
-            "path": "help-center",
-            "icon": "home"
-          },
-          {
-            "group": "FAQs",
-            "icon": "help-circle",
-            "expandable": false,
-            "pages": [
-              {
-                "title": "How to Create Project",
-                "path": "help-center/faq/how-to-create-project"
-              }
-            ]
-          },
-          {
-            "group": "Troubleshooting",
-            "icon": "alert-triangle",
-            "expandable": false,
-            "pages": [
-              {
-                "title": "Cannot Edit Page",
-                "path": "help-center/troubleshooting/cannot-edit-page"
-              }
-            ]
-          },
-          {
-            "group": "Guides",
-            "icon": "book-open",
-            "expandable": false,
-            "pages": [
-              {
-                "title": "Add New Member",
-                "path": "help-center/guides/add-new-member"
-              }
-            ]
-          }
-        ]
-      },
-      {
         "tab": "Changelog",
         "icon": "clock",
         "pages": [
