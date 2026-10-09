@@ -1,0 +1,97 @@
+---
+title: "Architektur & Komponenten"
+description: "Detailed top-level architecture of the TourData Mirror service, including FastAPI, sync engine, database layer, MCP server, CLI tools, and Azure Functions nightly sync."
+---
+
+## Architektur-Übersicht
+
+The TourData Mirror is built as a Python/FastAPI application with a clear separation between upstream data ingestion, local storage, and read APIs. The primary runtime is `src/tourdata_mirror/api/main.py`, which mounts all business routers under `/api/v1` with health probes at `/health` and `/ready`.
+
+```mermaid
+graph TD
+    A[Web Trip API] --> E[tourdata_client.py]
+    B[Dossier API] --> E
+    C[Disposition API v2] --> E
+    D[Address API] --> E
+
+    E --> F[sync/ modules]
+    F --> G[Azure PostgreSQL]
+    G --> H[db.py connection pool]
+
+    G --> I[FastAPI api/main.py]
+    I --> J[/api/v1]
+    I --> K[Consuming applications]
+
+    G --> L[MCP server mcp/]
+    M[CLI tools cli/] --> F
+    N[Nightly Azure Function functions/nightly_sync] --> F
+
+    K --> K1[BI]
+    K --> K2[Feedback analytics]
+    K --> K3[Velo-log]
+    K --> K4[Dispo]
+    K --> K5[kd-doc]
+    K --> K6[Notes]
+    K --> K7[Mail]
+    K --> K8[Alerts]
+    K --> K9[Events]
+```
+
+The upstream APIs remain external systems. `tourdata_client.py` handles their HTTP authentication, retries, pagination, and client-specific requests. Synchronization modules transform those responses into local PostgreSQL records using initial backfills and incremental ingestion.
+
+FastAPI and the MCP server consume the local database representation rather than querying the upstream systems for every request. CLI tools and the nightly Azure Function invoke the same synchronization modules, which keeps operational and scheduled ingestion paths aligned.
+
+## Komponenten
+
+| Area | Location | Responsibility |
+|---|---|---|
+| API application | `src/tourdata_mirror/api/` | FastAPI app, authentication, routers, pagination, and rate limits |
+| TourData integration | `src/tourdata_mirror/tourdata_client.py` | HTTP authentication, retries, pagination, and upstream API calls |
+| Synchronization | `src/tourdata_mirror/sync/` | Upsert and incremental ingestion logic |
+| Database | `src/tourdata_mirror/db.py` | Connection pool and single database connections |
+| Configuration | `src/tourdata_mirror/config.py` | Environment settings, tenant credentials, and feature switches |
+| Feedback processing | `feedback_enrichment.py`, `feedback_sentiment.py` | LLM sentiment analysis, themes, and recommendations |
+| Alerts | `src/tourdata_mirror/alerts/` | Metrics, rules, packs, evaluation, and UI support |
+| Mail | `src/tourdata_mirror/mail/` | Queue, templates, transport, and delivery |
+| Events | `src/tourdata_mirror/events/` | Event formats, signing, inbox and outbox persistence, and delivery |
+| MCP | `src/tourdata_mirror/mcp/` | Local and remote LLM integration |
+| CLI | `src/tourdata_mirror/cli/` | Backfills, migrations, ingestion, exports, analysis, and operations |
+| Infrastructure | `infra/terraform/`, `Dockerfile`, `.github/workflows/` | Azure deployment and CI/CD |
+| Schema | `db/migrations/`, `docs/schema/mirror-schema.sql` | Database schema and migrations |
+
+### Runtime boundaries
+
+The API application is the primary runtime boundary. `api/main.py` mounts business routers under `/api/v1`, while `/health` provides a liveness probe and `/ready` verifies database readiness with a database query.
+
+The synchronization boundary is separate from the request-serving boundary. Modules under `sync/` manage trip, booking, customer, survey, personnel, and disposition ingestion. They track synchronization runs, cursors, statuses, record counts, timestamps, and errors in the `_sync` schema.
+
+Configuration is centralized in `config.py`. It resolves environment settings, tenant-specific TourData credentials, authentication settings, and domain-specific feature flags used by the API and background operations.
+
+## Datenbank/API-Trennung
+
+<Callout kind="info">
+
+Upstream systems are remote and relatively slow. The mirror stores a local, queryable PostgreSQL representation so applications can use consistent FastAPI endpoints instead of connecting directly to the database or calling TourData APIs themselves.
+
+</Callout>
+
+The database layer in `db.py` manages the PostgreSQL connection pool and individual connections. FastAPI routers use this layer to serve local data with pagination, read-only transactions, query timeouts, access policies, and domain-specific response models.
+
+This separation gives consuming applications a stable API boundary. It also allows synchronization to continue independently of read traffic and lets the service expose derived data, including feedback aggregates, booking views, disposition data, alerts, and planning information.
+
+## Nightly Azure Function
+
+The timer-triggered Azure Function at `functions/nightly_sync/__init__.py` runs daily at 02:00 UTC. It resolves credentials and runs synchronization independently for each configured tenant.
+
+For each tenant, the function:
+
+- Resolves tenant-specific Web Trip and Dossier credentials.
+- Opens the corresponding TourData clients.
+- Synchronizes trips.
+- Synchronizes bookings.
+- Logs the result for that tenant.
+- Skips tenants without the required credentials instead of aborting the entire run.
+
+The function treats trip and booking synchronization independently because a tenant may have Dossier access without Web Trip access. The run fails visibly when no tenant successfully imports bookings, which prevents an apparently successful schedule from hiding a complete ingestion failure.
+
+The same synchronization modules are also available through CLI commands such as `tdm-backfill`, `tdm-ingest`, and `tdm-enrich`. This keeps scheduled operations, manual backfills, and local maintenance workflows on the same ingestion implementation.

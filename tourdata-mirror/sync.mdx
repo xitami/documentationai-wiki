@@ -1,0 +1,98 @@
+---
+title: "Synchronisation & Datenfluss"
+description: "How TourData Mirror syncs data from source systems, manages initial and incremental syncs, and runs nightly Azure Functions for per-tenant ingestion."
+---
+
+## Synchronisation und Datenfluss
+
+The TourData Mirror synchronizes data from four upstream TourData APIs into Azure PostgreSQL using a combination of CLI-driven initial backfills, incremental ingestion, and a nightly Azure Function. Each sync run tracks its entity, status, timestamps, record counts, and source cursor in the `_sync` schema.
+
+## Quellsysteme
+
+| Source | Client | Purpose |
+|---|---|---|
+| Web Trip API | `WebTripClient` | Trip catalogue and trip master data |
+| Dossier API | `DossierClient` | Bookings, participants, invoices, services, surveys |
+| Disposition API v2 | `DispositionClient` | Vehicles, assignments, drivers, guides, stops, transports |
+| Address API | `AddressClient` | Reisepersonal and customer address/master data |
+
+## Sync-Phasen
+
+<Steps>
+  <Step title="Initial Backfill">
+
+  Run `tdm-backfill trips` and `tdm-backfill bookings` to load the full dataset into PostgreSQL. Run the backfill once per tenant during setup.
+
+  </Step>
+
+  <Step title="Incremental Sync">
+
+  Run `tdm-ingest` to process changes since the last cursor position. The ingestion uses mutation timestamps and source cursors where available.
+
+  </Step>
+
+  <Step title="Enrichment">
+
+  Run `tdm-enrich` to add details to trips, including categories, destinations, texts, images, and prices.
+
+  </Step>
+
+  <Step title="Nightly Azure Function">
+
+  The timer-triggered Azure Function runs daily at 02:00 UTC. For each tenant, it resolves credentials, synchronizes trips, synchronizes bookings, and logs the result. Tenants without credentials are skipped. The function fails visibly if no tenant successfully imports bookings.
+
+  </Step>
+
+  <Step title="View Refresh">
+
+  Run `tdm-refresh-views` to update materialized views and aggregate tables after synchronization.
+
+  </Step>
+</Steps>
+
+## Sync-Module
+
+| Module | Description |
+|---|---|
+| `sync/trips.py` | Trip catalogue and trip details |
+| `sync/trips_soon.py` | Upcoming trips and departures |
+| `sync/bookings.py` | Dossier, participant, invoice, and service ingestion |
+| `sync/customers.py` | Customer and address data |
+| `sync/persons.py` | People and Reisepersonal data |
+| `sync/surveys.py` | Feedback and survey ingestion |
+| `sync/dispositions.py` | Raw Disposition API ingestion |
+| `sync/dispo_staff.py` | Disposition personnel |
+| `sync/dispo_trips.py` | Disposition-to-trip relationships |
+| `sync/reisepersonal.py` | Address API personnel ingestion |
+| `sync/changes.py` | Cursors and change tracking |
+| `sync/state.py` | Run state, transactions, and rollback |
+
+## Sync-State
+
+The `_sync` schema stores the operational state of synchronization runs. Each run records the processed entity, current status, start and finish timestamps, number of records upserted, source cursor, and any error message.
+
+The source cursor allows incremental jobs to resume from the last successfully processed position. Operators can use the recorded status, timestamps, and error message to distinguish completed, failed, and in-progress runs.
+
+<Callout kind="info">
+
+`sync/state.py`` uses database transactions for synchronization. When a run fails, business-data changes roll back while the failed-run record remains available for diagnosis.
+
+</Callout>
+
+## CLI-Befehle
+
+| Command | Purpose |
+|---|---|
+| `tdm-backfill` | Initial full data load |
+| `tdm-ingest` | Incremental synchronization |
+| `tdm-enrich` | Trip enrichment |
+| `tdm-refresh-views` | Materialized view refresh |
+| `tdm-migrate up` | Database migrations |
+| `tdm-db-export` | Database snapshot and export |
+| `tdm-db-import` | Database import |
+
+<Callout kind="alert">
+
+The nightly Azure Function fails visibly when no tenant successfully imports bookings. This behavior prevents silent ingestion failures from appearing as a successful run.
+
+</Callout>

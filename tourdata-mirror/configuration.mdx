@@ -1,0 +1,168 @@
+---
+title: "Konfiguration & Environment"
+description: "All environment variables for TourData Mirror, organized by category: Database, Upstream APIs, Tenants, Entra, LLMs, Operational flags, domain-specific feature flags, Mail/Events, and customer-document public links."
+---
+
+## Configuration overview
+
+Configuration is defined in `src/tourdata_mirror/config.py`. Example values are provided in `.env.example`. The service uses a `psycopg_pool.ConnectionPool` with up to 20 connections, per-tenant credential resolution, and domain-specific feature flags that default to disabled in production.
+
+<Callout kind="tip">
+
+Use `.env.example` as the starting point for local configuration. Keep production secrets in your deployment secret store instead of committing them to the repository.
+
+</Callout>
+
+<CodeGroup tabs="Environment file">
+
+```bash
+ENV=development
+LOG_LEVEL=INFO
+
+DATABASE_URL=postgresql://mirror_user:mirror_password@localhost:5432/tourdata_mirror
+
+TOURDATA_WEBTRIP_BASE_URL=https://tourdata.example.invalid/webtrip
+TOURDATA_DOSSIER_BASE_URL=https://tourdata.example.invalid/dossier
+TOURDATA_DISPO_BASE_URL=https://tourdata.example.invalid/disposition
+TOURDATA_ADDRESS_BASE_URL=https://tourdata.example.invalid/address
+
+TENANT_ID=twg
+TOURDATA_TENANTS=twg
+TOURDATA_MANDANT=TWG
+
+ENTRA_TENANT_ID=tenant-guid-example
+ENTRA_API_AUDIENCE=api://tourdata-mirror
+
+OPENROUTER_API_KEY=sk-or-v1-example_9xmk7q2r
+ANTHROPIC_API_KEY=sk-ant-api03-example_9xmk7q2r
+LLM_BASE_URL=https://openrouter.ai/api/v1
+ANTHROPIC_OPENAI_BASE_URL=https://api.anthropic.com/v1
+ANTHROPIC_MODEL=claude-sonnet
+ANTHROPIC_MODEL_SENTIMENT=claude-haiku
+
+CORS_ALLOWED_ORIGINS=https://app.example.invalid
+READ_API_CALLER_POLICY=default
+READ_API_CALLER_ACCESS=default
+
+FEEDBACK_QUERY_ENABLED=false
+FEEDBACK_WRITE_ENABLED=false
+VELO_WRITE_ENABLED=false
+KD_DOC_WRITE_ENABLED=false
+DISPO_WRITE_ENABLED=false
+MAIL_SEND_ENABLED=false
+SYNC_REFRESH_ENABLED=false
+
+MAIL_TRANSPORT=console
+EVENTS_TRANSPORT=console
+EVENTS_DELIVER_ENABLED=false
+
+KDDOC_LINK_SECRET=local-development-secret-example
+KDDOC_PUBLIC_RATE_LIMIT=60
+KDDOC_PUBLIC_RATE_WINDOW_S=60
+KDDOC_PUBLIC_ASSET_RATE_LIMIT=120
+```
+
+</CodeGroup>
+
+## Database
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string for the mirror database. The application uses a `psycopg_pool.ConnectionPool` with up to 20 connections. |
+
+## Upstream APIs
+
+| Variable | Description |
+|---|---|
+| `TOURDATA_WEBTRIP_BASE_URL` | Base URL for the TourData Web Trip API. |
+| `TOURDATA_DOSSIER_BASE_URL` | Base URL for the TourData Dossier API. |
+| `TOURDATA_DISPO_BASE_URL` | Base URL for the TourData Disposition API. |
+| `TOURDATA_ADDRESS_BASE_URL` | Base URL for the TourData Address API. |
+| `TOURDATA_<TENANT>_DOSSIER_USERNAME` | Tenant-specific username for the TourData Dossier API. Replace `<TENANT>` with the configured tenant identifier. |
+| `TOURDATA_<TENANT>_DOSSIER_PASSWORD` | Tenant-specific password for the TourData Dossier API. Replace `<TENANT>` with the configured tenant identifier. |
+| `TOURDATA_<TENANT>_WEBTRIP_USERNAME` | Tenant-specific username for the TourData Web Trip API. Replace `<TENANT>` with the configured tenant identifier. |
+| `TOURDATA_<TENANT>_WEBTRIP_PASSWORD` | Tenant-specific password for the TourData Web Trip API. Replace `<TENANT>` with the configured tenant identifier. |
+
+The service resolves tenant-specific credentials when those variables are present. Global credentials may be used where tenant-specific credentials are not configured.
+
+## Tenants
+
+| Variable | Description |
+|---|---|
+| `TENANT_ID` | Canonical tenant ID used by the mirror database and application data. |
+| `TOURDATA_TENANTS` | Configured TourData tenants processed by synchronization jobs. |
+| `TOURDATA_MANDANT` | Mandant identifier used when calling the source TourData APIs. |
+
+The canonical database tenant ID is intentionally separate from the source API mandant. Do not assume that the values use the same identifier or format.
+
+## Entra
+
+| Variable | Description |
+|---|---|
+| `ENTRA_TENANT_ID` | Microsoft Entra tenant ID used to validate API authentication. |
+| `ENTRA_API_AUDIENCE` | Expected audience for Entra access tokens issued to the API. |
+
+Production startup fails closed when the required Entra authentication settings are missing.
+
+## LLMs
+
+| Variable | Description |
+|---|---|
+| `OPENROUTER_API_KEY` | API key for the OpenRouter-compatible LLM provider. |
+| `ANTHROPIC_API_KEY` | API key for the Anthropic-compatible LLM provider. |
+| `LLM_BASE_URL` | Base URL for the primary OpenAI-compatible LLM provider. |
+| `ANTHROPIC_OPENAI_BASE_URL` | Base URL for the Anthropic provider's OpenAI-compatible interface. |
+| `ANTHROPIC_MODEL` | Model used for Anthropic-compatible LLM tasks. |
+| `ANTHROPIC_MODEL_SENTIMENT` | Model used for sentiment processing. |
+
+The feedback processing pipeline can use an OpenAI-compatible provider, preferably OpenRouter, with an Anthropic-compatible fallback.
+
+## Operational Flags
+
+| Variable | Description |
+|---|---|
+| `ENV` | Runtime environment name used to distinguish development, test, and production behavior. |
+| `LOG_LEVEL` | Application logging level. |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated list of browser origins allowed to call the API. |
+| `READ_API_CALLER_POLICY` | Caller-policy configuration for read API groups. |
+| `READ_API_CALLER_ACCESS` | Caller access configuration for read API groups. |
+
+## Domain-Specific Feature Flags
+
+| Variable | Description |
+|---|---|
+| `FEEDBACK_QUERY_ENABLED` | Enables the controlled feedback analytics query endpoint. |
+| `FEEDBACK_WRITE_ENABLED` | Enables feedback write operations. |
+| `VELO_WRITE_ENABLED` | Enables Velo-log write operations. |
+| `KD_DOC_WRITE_ENABLED` | Enables customer-document store write operations. |
+| `DISPO_WRITE_ENABLED` | Enables disposition planning and portal write operations. |
+| `MAIL_SEND_ENABLED` | Enables mail submission and delivery. |
+| `SYNC_REFRESH_ENABLED` | Enables API-triggered synchronization refreshes. |
+
+These flags default to disabled in production. Enable only the write or refresh operations required by the deployment.
+
+## Mail & Events
+
+| Variable | Description |
+|---|---|
+| `MAIL_TRANSPORT` | Mail delivery transport selected by the service, such as console or Microsoft Graph. |
+| `MAIL_GRAPH_TENANT_ID` | Microsoft Entra tenant ID used for Microsoft Graph mail delivery. |
+| `MAIL_GRAPH_CLIENT_ID` | Client ID used for Microsoft Graph mail delivery. |
+| `MAIL_GRAPH_CLIENT_SECRET` | Client secret used for Microsoft Graph mail delivery. |
+| `MAIL_ALLOWED_RECIPIENTS` | Recipient allowlist used to constrain mail delivery, especially in development environments. |
+| `EVENTS_TRANSPORT` | Transport selected for event delivery. |
+| `EVENTS_DELIVER_ENABLED` | Enables event delivery to registered endpoints. |
+| `EVENTS_ALLOWED_HOSTS` | Hosts permitted for outbound event delivery. |
+
+The mail service renders and stores messages before delivery. Retries use the stored rendered message rather than rendering it again.
+
+## Customer-Document Public Links
+
+| Variable | Description |
+|---|---|
+| `KDDOC_LINK_SECRET` | Secret used to sign and validate customer-document link tokens with HMAC-SHA256. |
+| `KDDOC_PUBLIC_RATE_LIMIT` | Maximum number of requests allowed for public customer-document endpoints during one rate-limit window. |
+| `KDDOC_PUBLIC_RATE_WINDOW_S` | Length of the public customer-document rate-limit window in seconds. |
+| `KDDOC_PUBLIC_ASSET_RATE_LIMIT` | Maximum number of requests allowed for public customer-document assets during one rate-limit window. |
+
+Public customer-document links do not use Entra authentication. The service validates the token signature, expiry, document scope, revocation status, and configured rate limits.

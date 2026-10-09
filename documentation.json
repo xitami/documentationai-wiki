@@ -51,6 +51,47 @@
                 "icon": "plug"
               }
             ]
+          },
+          {
+            "group": "TourData Mirror",
+            "icon": "database",
+            "pages": [
+              {
+                "title": "Übersicht",
+                "path": "tourdata-mirror/overview",
+                "icon": "home"
+              },
+              {
+                "title": "Architektur & Komponenten",
+                "path": "tourdata-mirror/architecture",
+                "icon": "layers"
+              },
+              {
+                "title": "Synchronisation & Datenfluss",
+                "path": "tourdata-mirror/sync",
+                "icon": "refresh-cw"
+              },
+              {
+                "title": "API Endpunkte",
+                "path": "tourdata-mirror/api-endpoints",
+                "icon": "terminal"
+              },
+              {
+                "title": "Datenmodelle & Schemata",
+                "path": "tourdata-mirror/data-models",
+                "icon": "database"
+              },
+              {
+                "title": "Authentifizierung & Sicherheit",
+                "path": "tourdata-mirror/security",
+                "icon": "shield"
+              },
+              {
+                "title": "Konfiguration & Environment",
+                "path": "tourdata-mirror/configuration",
+                "icon": "settings"
+              }
+            ]
           }
         ]
       },

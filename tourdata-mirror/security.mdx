@@ -1,0 +1,89 @@
+---
+title: "Authentifizierung & Sicherheit"
+description: "Security model for TourData Mirror, including Entra JWT authentication, production fail-closed behavior, write feature flags, public customer links, and analytical data protection."
+---
+
+## Entra JWT-Authentifizierung
+
+The TourData Mirror secures all data endpoints with Entra JWT authentication. Production deployments fail closed when authentication is not configured, and write operations for sensitive domains are disabled by default behind feature flags. Public customer-document links use HMAC-signed tokens with expiry and revocation controls instead of Entra.
+
+All normal API routers use `require_entra_user`, either directly or through router dependencies. The main application groups routers by caller category:
+
+- **catalog**: Trip, booking, reference, and related read APIs
+- **operations**: Operational workflows such as Velo and disposition
+- **feedback**: Survey and feedback analytics
+- **aggregates**: BI and aggregate datasets
+- **platform**: Shared platform services and administration
+
+These groups are configured in `api/main.py`. Caller-policy settings can further restrict access by API group, dataset, or brand.
+
+<Callout kind="alert">
+
+Production startup fails if any of the following conditions is detected:
+
+- The Entra tenant ID is missing.
+- The Entra API audience is missing.
+- A development mail recipient allowlist is configured.
+
+</Callout>
+
+## Write Feature Flags
+
+Sensitive write operations remain disabled by default in production. Enable a domain only after configuring its authorization, operational controls, and monitoring.
+
+| Flag | Description |
+| --- | --- |
+| `FEEDBACK_WRITE_ENABLED` | Controls write access to feedback recommendations and query endpoints |
+| `VELO_WRITE_ENABLED` | Controls Velo-log status, metadata, bus, and print writes |
+| `KD_DOC_WRITE_ENABLED` | Controls kd-doc document and asset writes |
+| `DISPO_WRITE_ENABLED` | Controls Dispo assignment, requirement, and portal writes |
+| `MAIL_SEND_ENABLED` | Controls outbound mail delivery |
+| `SYNC_REFRESH_ENABLED` | Controls the debounced sync refresh endpoint |
+
+A disabled flag prevents the corresponding operation even when the caller has a valid Entra identity. Keep write flags disabled unless the deployment explicitly requires the related workflow.
+
+## Public Customer Links
+
+Customer-document links use HMAC-SHA256 signatures instead of Entra authentication. The public endpoints are intended for recipients who need to view a published document without signing in to the internal application.
+
+Each link token contains:
+
+- Token version
+- Tenant
+- Document scope
+- Document key
+- Expiry timestamp
+- HMAC-SHA256 signature
+
+The public path validates the signature, expiry, document scope, and revocation state before returning content. It also applies rate limiting to reduce abuse.
+
+Public document endpoints provide:
+
+- JSON responses for programmatic callers
+- An HTML viewer shell for browsers
+- Content-addressed images
+- Current boarding-location and boarding-time changes since the frozen document was published
+
+<Callout kind="info">
+
+The public customer-link endpoints are intentionally outside the Entra-protected router. Access depends on a valid, unexpired, non-revoked HMAC-signed token and the applicable rate limits.
+
+</Callout>
+
+## Analytical Data Protection
+
+Analytical APIs apply controls that limit data exposure and bound query cost.
+
+| Protection | Description |
+| --- | --- |
+| Caller-specific dataset and brand access | Each caller receives only authorized datasets and brands |
+| Minimum-group suppression | Groups below a configurable size are suppressed to protect personal data |
+| Read-only transactions | Analytical endpoints use read-only database transactions |
+| Statement timeouts | Queries are bounded by configurable timeouts |
+| Row limits | Results are capped to prevent large result sets |
+| Query validation | The feedback query endpoint restricts statements to `SELECT` or `WITH` over `feedback_analytics` |
+| ETags and caching | Responses include ETags for efficient caching |
+
+The aggregate API also exposes provenance metadata and an “as of” timestamp based on the latest successful synchronization. These values help consumers distinguish current mirror data from stale or incomplete results.
+
+The feedback query endpoint is disabled by default in production and remains limited to validated read-only statements when enabled. It cannot be used to modify data or query schemas outside `feedback_analytics`.

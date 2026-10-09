@@ -1,0 +1,201 @@
+---
+title: "Datenmodelle & Schemata"
+description: "Database schemas in TourData Mirror, including tourdata, feedback_analytics, dispo, velo_log, kd_store, workspace, mail, alert, events, AI, and _sync."
+---
+
+## Schema overview
+
+The TourData Mirror stores data across multiple PostgreSQL schemas, each serving a distinct operational or analytical purpose. The core `tourdata` schema holds mirrored master data, while derived schemas support feedback analytics, disposition planning, customer documents, and operational services.
+
+<Callout kind="info">
+
+`tourdata` contains operational master and booking data mirrored from TourData. `feedback_analytics` contains analytical support objects and feedback-derived data. The raw disposition mirror in `tourdata.dispo_*` is separate from the `dispo` schema, which stores the organization's own planning and assignment data.
+
+</Callout>
+
+## tourdata (Core Schema)
+
+The `tourdata` schema contains the core TourData mirror, including master data, the trip catalogue, people, bookings, invoices, and services.
+
+| Table | Description |
+|---|---|
+| `tenants` | Tenants represented in the mirror. |
+| `countries` | Countries referenced by trips and other TourData records. |
+| `sales_agents` | Sales agents associated with bookings and business processes. |
+| `service_types` | Service type reference data. |
+| `business_partners` | Business partners associated with trips, bookings, or services. |
+| `trips` | Mirrored trip catalogue records and trip-level attributes. |
+| `trip_countries` | Many-to-many relationships between trips and countries. |
+| `trip_departure_dates` | Departure dates associated with trips. |
+| `persons` | People referenced by bookings, participants, and operational data. |
+| `bookings` | Dossiers and booking-level data, including tenant, trip, customer, status, dates, passenger counts, and financial totals. |
+| `participants` | People participating in a booking. |
+| `invoices` | Invoices and payment-related booking data. |
+| `services` | Services associated with bookings or trips. |
+| `service_items` | Individual service items belonging to services. |
+| `service_item_participants` | Relationships between service items and participants. |
+
+Additional migrations extend the core model with sync metadata, customer addresses, club memberships, boarding stops and times, trip enrichment fields, recommendation filters, country ISO codes, tenant normalization, and real mutation tracking.
+
+## feedback_analytics
+
+The `feedback_analytics` schema supports survey processing, feedback enrichment, recommendation data, and aggregate reporting.
+
+| Table | Description |
+|---|---|
+| `survey` | Raw or normalized survey records from the Dossier data. |
+| `survey_sentiment` | Sentiment classifications, scores, summaries, and related analysis results. |
+| `survey_theme` | Themes, aspects, and polarity extracted from survey responses. |
+| `trip_recommendation` | LLM-generated or stored recommendations associated with trips and feedback. |
+| `question` | Survey question definitions. |
+| `choice` | Available choices for survey questions. |
+| `v_trip_enrichment` | Integration view combining feedback data with trip information. |
+| NPS materialized views | Precomputed Net Promoter Score buckets and related aggregates. |
+| Theme leaderboard materialized views | Precomputed rankings and aggregates for feedback themes. |
+| Rating aggregate tables | Aggregated question ratings and related analytical results. |
+
+The mirror owns integration views and analytical support objects in this schema. Some application-owned tables are managed by the feedback analytics application.
+
+## tourdata.dispo_* (Raw Disposition Mirror)
+
+The `tourdata.dispo_*` objects contain raw disposition data synchronized from the TourData disposition API.
+
+| Table | Description |
+|---|---|
+| `dispo_vehicles` | Vehicles mirrored from the disposition system. |
+| `dispo_stops` | Stops used by dispositions and transports. |
+| `dispositions` | Raw disposition records. |
+| `dispo_assignments` | Assignment records associated with dispositions. |
+| `dispo_assignment_staff` | Staff assigned to disposition assignments. |
+| `dispo_assignment_criteria` | Criteria associated with disposition assignments. |
+| `dispo_transports` | Transport legs within dispositions. |
+| `dispo_transport_stops` | Stops belonging to transport legs. |
+| `dispo_transport_passengers` | Passenger relationships for transport legs. |
+| `dispo_sync_windows` | Synchronization windows for disposition data. |
+| `dispo_persons` | People referenced by the raw disposition mirror. |
+| `v_dispo_transport_passenger` | View combining transport and passenger information. |
+| `v_participant_boarding` | View exposing participant boarding locations and times. |
+
+This raw mirror is distinct from the `dispo` planning schema.
+
+## dispo (Planning Schema)
+
+The `dispo` schema stores application-owned planning, staffing, assignment, and portal data.
+
+| Table | Description |
+|---|---|
+| Staff | Staff records used for planning and assignments. |
+| Staff roles | Roles that staff members can perform. |
+| Staff tenants | Tenant associations for staff members. |
+| Staff languages | Languages associated with staff members. |
+| Staff qualifications | Qualifications associated with staff members. |
+| Assignments | Planned staff assignments. |
+| Assignment proposals | Proposed assignments generated during planning. |
+| Planning runs | Planning execution records and results. |
+| Decision logs | Audit records for assignment decisions. |
+| Trip requirements | Requirements associated with trips. |
+| Role, language, and qualification requirements | Staffing requirements by role, language, and qualification. |
+| Absences | Staff absence periods. |
+| Portal links | Links used to provide staff portal access. |
+| Preferences and self-limits | Staff planning preferences and self-imposed limits. |
+| Workload materialized views | Precomputed workload information for staff and planning periods. |
+| Demand materialized views | Precomputed staffing demand information. |
+| Comparison views | Planned-versus-actual and related operational comparisons. |
+
+## velo_log
+
+The `velo_log` schema stores application state used by Velo-log workflows.
+
+| Table | Description |
+|---|---|
+| Trip status | Status of a trip or departure in the Velo-log workflow. |
+| Bus and trailer assignments | Bus, trailer, and replacement vehicle assignments. |
+| Trip metadata | Additional departure-level metadata. |
+| Print state | Label-print, order-print, and complete print-cycle state. |
+| Participant snapshots | Snapshots of participants used by Velo-log operations. |
+
+## kd_store
+
+The `kd_store` schema stores customer-document data and the assets and links used to publish those documents.
+
+| Table | Description |
+|---|---|
+| Tenant | Tenant associated with a stored document or asset. |
+| Scope | Whitelisted document scope, such as `doc`, `trip`, `departure`, or `template`. |
+| Key | Identifier for the stored document within its scope. |
+| JSONB document data | Generic document content stored as JSONB. |
+| Content-addressed assets | Assets addressed by their content hash. |
+| Revoked links | Customer links that are no longer valid. |
+
+## workspace
+
+The `workspace` schema stores shared notes attached to business entities.
+
+| Table | Description |
+|---|---|
+| Entity type | Type of entity receiving the note, such as a booking, trip, or customer. |
+| Entity key | Identifier of the referenced entity. |
+| Tenant | Tenant context for the note. |
+| Author | Entra identity of the note author. |
+| Flag | Importance or status flag for the note. |
+| JSONB content | Markdown note content and optional rendering metadata. |
+| Origin | Application or source that created the note. |
+| Timestamps | Created and updated timestamps. |
+
+## mail
+
+The `mail` schema stores messages before and during delivery through the centralized mail service.
+
+| Table | Description |
+|---|---|
+| Senders | Authorized sender identities and mailboxes. |
+| App-to-sender permissions | Permissions that control which applications may use senders. |
+| Templates | Reusable mail templates. |
+| Messages | Rendered messages persisted before delivery. |
+| Delivery attempts | Delivery history, retries, and transport results. |
+
+## alert
+
+The `alert` schema stores rule-based alert configuration and execution history.
+
+| Table | Description |
+|---|---|
+| Metrics | Registered metrics evaluated by the alert engine. |
+| Rules | Alert conditions, scopes, frequencies, and recipients. |
+| Rule history | Historical changes and evaluation information for rules. |
+| Alert triggers | Triggered, cleared, and reopened alert instances. |
+
+## event
+
+The `event` schema supports inbox and outbox processing, endpoint registration, and event delivery.
+
+| Table | Description |
+|---|---|
+| Inbox messages | Incoming event messages retained for processing and deduplication. |
+| Outbox events | Events queued for publication. |
+| Endpoint registrations | Registered event delivery endpoints. |
+| Endpoint profiles | Delivery configuration and endpoint behavior profiles. |
+| Delivery attempts | Attempts to deliver events to registered endpoints. |
+| Event status and retention data | Processing state, delivery status, and retention metadata. |
+
+## AI
+
+The `AI` schema stores configuration and metadata for AI-assisted processing.
+
+| Table | Description |
+|---|---|
+| AI settings | Current settings for AI-assisted tasks and providers. |
+| Setting history | Historical versions of AI settings. |
+| AI task registry | Registered AI tasks and their capabilities. |
+| Model and task metadata | Models, task associations, and related administration metadata. |
+
+## _sync
+
+The `_sync` schema stores bookkeeping for initial imports, incremental synchronization, and refresh operations.
+
+| Table | Description |
+|---|---|
+| Sync runs | Synchronization runs with entity, status, timestamps, record counts, cursors, and errors. |
+| Entity cursors | Incremental synchronization positions for individual entities. |
+| Refresh logs | Records of targeted refresh operations. |
+| Ingestion bookkeeping | Additional metadata used to coordinate and monitor ingestion. |

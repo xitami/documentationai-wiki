@@ -1,0 +1,243 @@
+---
+title: API Endpunkte
+description: >-
+  Complete inventory of TourData Mirror API endpoints under /api/v1, organized
+  by domain: Trips, Bookings, Feedback, Dispositions, Dispo, Velo, kd-doc,
+  Notes, Events, and more.
+---
+## API base path
+
+All data endpoints are mounted under `/api/v1` and require Entra JWT authentication. Health probes remain at `/health` and `/ready`. The API uses keyset pagination, read-only transactions, query timeouts, and per-endpoint or per-domain write feature flags.
+
+```text
+/api/v1
+```
+
+Use an Entra bearer token in the `Authorization` header when calling protected endpoints.
+
+<CodeGroup show-lines="true">
+  ```bash
+  curl --request GET \
+    --url https://tourdata-mirror.example.org/api/v1/trips \
+    --header "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example.token"
+  ```
+</CodeGroup>
+
+## Health
+
+Health probes are available outside the `/api/v1` prefix and do not require the normal data API route prefix.
+
+| Method | Path      | Description                               |
+| ------ | --------- | ----------------------------------------- |
+| `GET`  | `/health` | Liveness check with no database access.   |
+| `GET`  | `/ready`  | Readiness check that executes `SELECT 1`. |
+
+## Trips
+
+Trip endpoints provide catalogue records, departure data, detailed trip information, realization data, and similar-trip recommendations.
+
+| Method | Path                                  | Description                                                                                            |
+| ------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/api/v1/trips`                       | List trips with search, filters, sorting, and keyset pagination.                                       |
+| `GET`  | `/api/v1/trips/departures`            | List trip departure dates and related departure information.                                           |
+| `GET`  | `/api/v1/trips/{trip_id}`             | Return details for a trip.                                                                             |
+| `GET`  | `/api/v1/trips/{trip_id}/realization` | Return representative booking and supplier or service realization data for a trip.                     |
+| `GET`  | `/api/v1/trips/{trip_id}/similar`     | Return similar trips based on catalogue attributes such as categories, countries, price, and duration. |
+
+## Bookings
+
+Booking endpoints expose mirrored dossier data and derived operational views.
+
+| Method | Path                                   | Description                                                            |
+| ------ | -------------------------------------- | ---------------------------------------------------------------------- |
+| `GET`  | `/api/v1/bookings`                     | List bookings with filtering, sorting, and pagination.                 |
+| `GET`  | `/api/v1/bookings/stats`               | Return booking statistics.                                             |
+| `GET`  | `/api/v1/bookings/departure-crew`      | Return crew assigned to a booking departure.                           |
+| `GET`  | `/api/v1/bookings/manifest`            | Return the participant manifest, including resolved participant roles. |
+| `GET`  | `/api/v1/bookings/{booking_id}`        | Return details for a booking.                                          |
+| `GET`  | `/api/v1/bookings/{booking_id}/graph`  | Return the booking graph and related entities.                         |
+| `GET`  | `/api/v1/bookings/{booking_id}/hotels` | Return hotel services and overnight stays for a booking.               |
+
+## Persons and customers
+
+These endpoints retrieve individual people, customers, and a customer's bookings.
+
+| Method | Path                                       | Description                                                      |
+| ------ | ------------------------------------------ | ---------------------------------------------------------------- |
+| `GET`  | `/api/v1/persons/{person_id}`              | Return details for a person.                                     |
+| `GET`  | `/api/v1/customers/{customer_id}`          | Return details for a customer, including available address data. |
+| `GET`  | `/api/v1/customers/{customer_id}/bookings` | Return bookings associated with a customer.                      |
+
+## Business partners
+
+Business partner endpoints provide partner details and associated trips.
+
+| Method | Path                                           | Description                                      |
+| ------ | ---------------------------------------------- | ------------------------------------------------ |
+| `GET`  | `/api/v1/business-partners/{partner_id}`       | Return details for a business partner.           |
+| `GET`  | `/api/v1/business-partners/{partner_id}/trips` | Return trips associated with a business partner. |
+
+## Reference data
+
+Use the reference endpoints to retrieve shared lookup data used by trips, bookings, and feedback consumers.
+
+| Method | Path                       | Description                                                                                                                                                           |
+| ------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/reference`        | Return the available reference-data collections.                                                                                                                      |
+| `GET`  | `/api/v1/reference/{kind}` | Return one reference-data collection. Supported kinds include `countries`, `service-types`, `trip-categories`, `tenants`, `sales-agents`, `questions`, and `choices`. |
+
+## Feedback
+
+Feedback endpoints expose surveys, sentiment and theme analysis, ratings, NPS data, trip insights, and recommendations.
+
+<Expandable title="Feedback endpoints" default-open="false">
+  | Method | Path                                                | Description                                                                                                                            |
+  | ------ | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+  | `GET`  | `/api/v1/feedback/surveys`                          | List feedback surveys.                                                                                                                 |
+  | `GET`  | `/api/v1/feedback/surveys/{survey_id}`              | Return a survey and its available analysis data.                                                                                       |
+  | `GET`  | `/api/v1/feedback/trips/{trip_code}`                | Return feedback associated with a trip.                                                                                                |
+  | `GET`  | `/api/v1/feedback/trips/{trip_code}/recommendation` | Return the recommendation for a trip.                                                                                                  |
+  | `POST` | `/api/v1/feedback/trips/{trip_code}/recommendation` | Create or update a recommendation for a trip.                                                                                          |
+  | `GET`  | `/api/v1/feedback/summary`                          | Return an aggregate feedback summary.                                                                                                  |
+  | `GET`  | `/api/v1/feedback/themes`                           | Return feedback themes, aspects, and polarity data.                                                                                    |
+  | `GET`  | `/api/v1/feedback/top-trips`                        | Return trips ranked by feedback results.                                                                                               |
+  | `GET`  | `/api/v1/feedback/drivers`                          | Return driver-related feedback data.                                                                                                   |
+  | `GET`  | `/api/v1/feedback/insights`                         | Return feedback insights for analytical consumers.                                                                                     |
+  | `GET`  | `/api/v1/feedback/stats`                            | Return feedback statistics.                                                                                                            |
+  | `GET`  | `/api/v1/feedback/nps`                              | Return Net Promoter Score data and trends.                                                                                             |
+  | `GET`  | `/api/v1/feedback/sentiments`                       | Return sentiment results.                                                                                                              |
+  | `GET`  | `/api/v1/feedback/avg-ratings`                      | Return average question ratings.                                                                                                       |
+  | `GET`  | `/api/v1/feedback/pipeline-status`                  | Return feedback analysis pipeline status and coverage.                                                                                 |
+  | `GET`  | `/api/v1/feedback/enrichments`                      | Return trip and feedback enrichment data.                                                                                              |
+  | `GET`  | `/api/v1/feedback/recommendations`                  | List stored feedback recommendations.                                                                                                  |
+  | `POST` | `/api/v1/feedback/recommendations`                  | Create or update stored feedback recommendations.                                                                                      |
+  | `POST` | `/api/v1/feedback/query`                            | Execute a restricted read-only query using `SELECT` or `WITH` over the `feedback_analytics` schema. Disabled by default in production. |
+</Expandable>
+
+## Aggregates
+
+The aggregate API is intended for dashboards and BI consumers that need measures and dimensions rather than individual records.
+
+| Method | Path                                  | Description                                                                       |
+| ------ | ------------------------------------- | --------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/aggregates`                  | Describe available aggregate datasets, measures, dimensions, and access metadata. |
+| `POST` | `/api/v1/aggregates/{dataset}/query`  | Query a dataset with time-range and dimension filters.                            |
+| `GET`  | `/api/v1/aggregates/{dataset}/values` | Return available values for a dataset dimension.                                  |
+
+Aggregate responses can include provenance, an `as of` timestamp, cursors, and caching metadata. Dataset access, minimum-group suppression, query timeouts, and rate limits apply.
+
+## Dispositions
+
+Disposition endpoints expose the operational departure view assembled from mirrored disposition data.
+
+| Method | Path                             | Description                                                                                                                                          |
+| ------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/dispositions/departure` | Return buses, trailers, assignment timing, locations, drivers, guides, staff status, contact data, and the match type used for the departure lookup. |
+
+## Dispo planning and portal
+
+The Dispo API contains planning, assignment, staff, and portal operations. Write operations are disabled by default in production unless `DISPO_WRITE_ENABLED=true`.
+
+<Expandable title="Dispo planning and portal endpoints" default-open="false">
+  | Method   | Path                                                                  | Description                                          |
+  | -------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
+  | `GET`    | `/api/v1/dispo/snapshot`                                              | Return the current season or planning snapshot.      |
+  | `POST`   | `/api/v1/dispo/runs`                                                  | Create a planning run.                               |
+  | `GET`    | `/api/v1/dispo/runs`                                                  | List planning runs.                                  |
+  | `GET`    | `/api/v1/dispo/runs/{run_id}/proposals`                               | Return assignment proposals for a planning run.      |
+  | `GET`    | `/api/v1/dispo/decisions`                                             | Return assignment decisions and audit data.          |
+  | `GET`    | `/api/v1/dispo/comparison`                                            | Return planned-versus-actual assignment comparisons. |
+  | `GET`    | `/api/v1/dispo/trip-experience`                                       | Return trip experience and qualified-staff data.     |
+  | `GET`    | `/api/v1/dispo/requirements`                                          | Return planning requirements.                        |
+  | `PUT`    | `/api/v1/dispo/requirements`                                          | Replace or update planning requirements.             |
+  | `DELETE` | `/api/v1/dispo/requirements`                                          | Delete planning requirements.                        |
+  | `GET`    | `/api/v1/dispo/staff/lookup`                                          | Search or resolve staff records.                     |
+  | `POST`   | `/api/v1/dispo/staff/{staff_id}/tenants`                              | Activate a staff member for tenants.                 |
+  | `GET`    | `/api/v1/dispo/portal/roster`                                         | Return the portal roster.                            |
+  | `GET`    | `/api/v1/dispo/portal/resolve`                                        | Resolve portal access from staff or identity data.   |
+  | `GET`    | `/api/v1/dispo/portal/{staff_id}`                                     | Return a staff member's portal profile.              |
+  | `PUT`    | `/api/v1/dispo/portal/{staff_id}/preferences`                         | Update portal preferences.                           |
+  | `PUT`    | `/api/v1/dispo/portal/{staff_id}/limits`                              | Update self-imposed staff limits.                    |
+  | `PUT`    | `/api/v1/dispo/portal/{staff_id}/languages`                           | Update staff language qualifications.                |
+  | `PUT`    | `/api/v1/dispo/portal/{staff_id}/qualifications`                      | Update staff qualifications.                         |
+  | `POST`   | `/api/v1/dispo/portal/links`                                          | Create a portal link.                                |
+  | `POST`   | `/api/v1/dispo/portal/links/redeem`                                   | Redeem a portal link.                                |
+  | `POST`   | `/api/v1/dispo/portal/{staff_id}/absences`                            | Create a staff absence.                              |
+  | `DELETE` | `/api/v1/dispo/portal/{staff_id}/absences/{absence_id}`               | Delete a staff absence.                              |
+  | `POST`   | `/api/v1/dispo/portal/{staff_id}/assignments/{assignment_id}/respond` | Submit a staff response to an assignment.            |
+  | `POST`   | `/api/v1/dispo/assignments`                                           | Create an assignment.                                |
+  | `PATCH`  | `/api/v1/dispo/assignments/{assignment_id}`                           | Update an assignment.                                |
+</Expandable>
+
+## Velo
+
+Velo endpoints expose trip and departure application state. Write operations are controlled by `VELO_WRITE_ENABLED`.
+
+| Method   | Path                                                               | Description                                                     |
+| -------- | ------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `GET`    | `/api/v1/velo/status`                                              | Return Velo service or application status.                      |
+| `GET`    | `/api/v1/velo/trips/{trip_code}/{departure}/appdata`               | Return Velo application data for a trip departure.              |
+| `PUT`    | `/api/v1/velo/trips/{trip_code}/{departure}/status`                | Update the status of a trip departure.                          |
+| `PUT`    | `/api/v1/velo/trips/{trip_code}/{departure}/meta`                  | Update trip departure metadata.                                 |
+| `PUT`    | `/api/v1/velo/trips/{trip_code}/{departure}/buses/{bus}/anhaenger` | Add or update a trailer or replacement bicycle entry for a bus. |
+| `DELETE` | `/api/v1/velo/trips/{trip_code}/{departure}/buses/{bus}/anhaenger` | Delete the trailer or replacement bicycle entry for a bus.      |
+| `POST`   | `/api/v1/velo/trips/{trip_code}/{departure}/prints`                | Record a print cycle for a trip departure.                      |
+
+## kd-doc
+
+Authenticated kd-doc endpoints store and retrieve scoped JSON documents and content-addressed assets. Writes are controlled by `KD_DOC_WRITE_ENABLED`.
+
+| Method   | Path                           | Description                                      |
+| -------- | ------------------------------ | ------------------------------------------------ |
+| `GET`    | `/api/v1/kddoc`                | List document keys or IDs.                       |
+| `GET`    | `/api/v1/kddoc/{scope}/{key}`  | Return a document by scope and key.              |
+| `PUT`    | `/api/v1/kddoc/{scope}/{key}`  | Create or replace a document.                    |
+| `DELETE` | `/api/v1/kddoc/{scope}/{key}`  | Delete a document.                               |
+| `GET`    | `/api/v1/kddoc/asset`          | List available content-addressed assets.         |
+| `PUT`    | `/api/v1/kddoc/asset/{sha256}` | Upload or store an asset by SHA-256 hash.        |
+| `POST`   | `/api/v1/kddoc/link`           | Create a public customer-document link.          |
+| `POST`   | `/api/v1/kddoc/link/revoke`    | Revoke a public customer-document link.          |
+| `GET`    | `/api/v1/kddoc/published`      | Retrieve a published document by Dossier number. |
+
+### Public kd-doc endpoints
+
+Public customer-link endpoints do not use Entra authentication. They validate the link signature and expiry, enforce revocation checks, and apply rate limits.
+
+| Method | Path                                          | Description                                                                               |
+| ------ | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/kddoc/public/{token}`                | Return the document associated with a public link token.                                  |
+| `GET`  | `/api/v1/kddoc/public/{token}/aktuell`        | Return the current document view, including applicable boarding-location or time changes. |
+| `GET`  | `/api/v1/kddoc/public/{token}/asset/{sha256}` | Return a content-addressed asset associated with a public document link.                  |
+
+## Notes
+
+Notes are shared across applications and can be attached to bookings, trips, and customers.
+
+| Method   | Path                      | Description        |
+| -------- | ------------------------- | ------------------ |
+| `GET`    | `/api/v1/notes`           | List entity notes. |
+| `POST`   | `/api/v1/notes`           | Create a note.     |
+| `PATCH`  | `/api/v1/notes/{note_id}` | Update a note.     |
+| `DELETE` | `/api/v1/notes/{note_id}` | Delete a note.     |
+
+## Events
+
+The event catalog describes event types, payload schemas, content types, and HMAC signing requirements.
+
+| Method | Path                     | Description                                             |
+| ------ | ------------------------ | ------------------------------------------------------- |
+| `GET`  | `/api/v1/events/catalog` | Return the available event types and delivery metadata. |
+
+## Administration
+
+These routes provide local or administrative interfaces. Access depends on the deployment and caller policy.
+
+| Method | Path             | Description                                        |
+| ------ | ---------------- | -------------------------------------------------- |
+| `GET`  | `/admin`         | Open the local or administrative HTML entry point. |
+| `GET`  | `/debug`         | Open the debug interface.                          |
+| `GET`  | `/schema-viewer` | Open the database schema viewer.                   |
+| `GET`  | `/ai-admin`      | Open the AI administration interface.              |
+| `GET`  | `/mail-admin`    | Open the mail administration interface.            |
+| `GET`  | `/alerts-admin`  | Open the alerts administration interface.          |
+
