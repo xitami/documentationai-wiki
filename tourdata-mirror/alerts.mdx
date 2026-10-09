@@ -1,0 +1,309 @@
+---
+title: "Alerts & Benachrichtigungen"
+description: "Konfigurieren Sie Alert-Regeln mit Dry-Run, Bestätigung und Aktivierung — sicher, nachvollziehbar und mit flexiblen Zustellkanälen für E-Mail, Webhook und Inbox."
+---
+
+## Alerts und Benachrichtigungen
+
+Das Alert-System ist eine datenbankgestützte Regel-Engine, die Messung, Regelverwaltung, Trigger-Zustand und mehrkanalige Zustellung trennt. Regeln werden immer inaktiv erstellt und benötigen vor der Aktivierung einen Dry-Run. Benachrichtigungen werden per E-Mail, Webhook und interner Inbox zugestellt.
+
+## Alert-Lebenszyklus
+
+<Steps>
+  <Step title="Regel erstellen">
+
+  Eine Regel definiert Metrik, Schwellwert, Geltungsbereich, Empfänger und Frequenz. Neue Regeln werden immer mit `active=false` gespeichert. Das Erstellungsformular enthält kein Feld zum direkten Aktivieren; zusätzlich erzwingt die Datenbank den Standardwert `active=false`.
+
+  </Step>
+
+  <Step title="Dry-Run ausführen">
+
+  Der Dry-Run simuliert die Regel über einen historischen Zeitraum. Der Standardzeitraum beträgt 12 Monate. Die API akzeptiert Zeiträume von 1 bis 36 Monaten und liefert die erwartete Trefferzahl zurück.
+
+  Für die historische Berechnung gibt es drei Verfahren:
+
+  - **Exakt:** Historische SQL-Berechnung auf Basis der Metrik.
+  - **Simuliert:** Periodische Auswertung und Zählung der Übergänge in den Alert-Zustand.
+  - **Nicht verfügbar:** Die Metrik beschreibt einen reinen Momentzustand, der historisch nicht rekonstruiert werden kann.
+
+  </Step>
+
+  <Step title="Treffer prüfen">
+
+  Prüfen Sie die vom Dry-Run gelieferte Anzahl erwarteter Treffer. Diese Zahl wird bei der Aktivierung als Bestätigung übergeben.
+
+  </Step>
+
+  <Step title="Aktivieren">
+
+  Die Aktivierung berechnet den Dry-Run unmittelbar neu. Der Aufruf muss `bestaetigt: true` und die zuvor angezeigte Zahl in `gesehene_treffer` enthalten. Die Aktivierung wird in `alert.rule_history` protokolliert.
+
+  </Step>
+
+  <Step title="Bearbeiten oder Deaktivieren">
+
+  Jede tatsächliche Änderung an einer Regel deaktiviert sie automatisch. Danach ist ein neuer Dry-Run mit anschließender Aktivierung erforderlich. Die Deaktivierung verwendet denselben Bestätigungsmechanismus und erwartet `bestaetigt=true`.
+
+  </Step>
+</Steps>
+
+<Callout kind="alert">
+
+Neue Regeln sind immer inaktiv. Es gibt kein Feld zum direkten Aktivieren bei der Erstellung.
+
+</Callout>
+
+<Callout kind="alert">
+
+Bei der Aktivierung wird der Dry-Run neu berechnet. Hat sich die Trefferzahl seit der Anzeige geändert, liefert die API HTTP `409` mit den Werten `gesehen` und `jetzt`. Das verhindert die Aktivierung auf Basis veralteter Schätzungen.
+
+</Callout>
+
+## Metrik-Registry
+
+Die Registry enthält Code-Evaluatoren und JSON-definierte SQL-Metriken. Die Richtung `above` löst bei `Wert > Schwellwert` aus, `below` bei `Wert < Schwellwert`. Statistische Metriken benötigen zusätzlich `min_sample`.
+
+| Metrik | Typ | Richtung | Beschreibung | Historie |
+|---|---|---|---|---|
+| `stale_days` | Code | `above` | Tage seit letzten neuen Daten pro Tenant und Stream | exakt |
+| `nps` | Code | `below` | NPS je Abreise, statistisch mit `min_sample` | exakt |
+| `cancel_rate` | JSON | `above` | Stornoquote je Reise, statistisch | simuliert, 30-Tage-Schritte |
+| `days_since_last_booking` | JSON | `above` | Tage seit letzter Buchung | simuliert, 7-Tage-Schritte |
+| `days_to_departure_without_guide` | JSON | `below` | Tage bis Abreise ohne bestätigte Reiseleitung | nicht verfügbar |
+| `nps_by_guide` | JSON | `below` | NPS je Reiseleitung, statistisch | simuliert, 30-Tage-Schritte |
+| `open_amount_before_departure` | JSON | `above` | Offener Rechnungsbetrag vor Abreise | nicht verfügbar |
+| `pax_before_departure` | JSON | `below` | Pax je Abreise in der Entscheidungsfrist | exakt |
+
+Die Schwellenwertprüfung erfolgt zentral in der Engine. Metriken messen ausschließlich Werte und wenden keine eigenen Schwellwerte an. Dadurch bleibt die Vergleichslogik für Code-Evaluatoren und JSON-Packs einheitlich.
+
+## Dry-Run und Aktivierung
+
+<CodeGroup tabs="Dry-Run (CLI),Aktivierung (API)">
+
+```bash
+tdm-alerts dry-run --metric nps --threshold 30 --min-sample 10
+
+{
+  "moeglich": true,
+  "treffer": 41,
+  "von": "2025-10-09",
+  "bis": "2026-10-09",
+  "monate": 12,
+  "verfahren": "exakt"
+}
+```
+
+```bash
+curl -X POST "https://api.example.org/api/v1/alerts/rules/123/activate" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+  -H "Content-Type: application/json" \
+  -d '{"bestaetigt": true, "gesehene_treffer": 41}'
+
+HTTP/1.1 200 OK
+
+{
+  "rule_id": 123,
+  "active": true
+}
+
+HTTP/1.1 409 Conflict
+
+{
+  "grund": "Der Trockenlauf hat sich geändert.",
+  "gesehen": 41,
+  "jetzt": 43
+}
+```
+
+</CodeGroup>
+
+## Trigger-Generierung
+
+Für jede aktive Regel wertet die Engine alle Kandidaten aus, wendet Geltungsbereich und Schwellenwert an und verwaltet anschließend die Trigger.
+
+Ein neuer Trigger wird in `alert.trigger` gespeichert, sobald eine Entität in den problematischen Zustand wechselt. Ein eindeutiger Index auf `(rule_id, entity_type, entity_key)` verhindert doppelte offene Trigger bei wiederholten oder parallelen Auswertungen.
+
+Ein Trigger erhält `cleared_at`, sobald die Entität nicht mehr im problematischen Zustand ist. Dieselbe Entität kann erst nach dieser Bereinigung erneut einen Trigger erzeugen.
+
+Damit gilt pro Zustandsübergang:
+
+- Problematischer Zustand beginnt: ein Trigger.
+- Zustand bleibt problematisch: kein weiterer Trigger.
+- Zustand normalisiert sich: Trigger wird bereinigt.
+- Problematischer Zustand beginnt erneut: neuer Trigger.
+
+Die Engine schreibt `alert.triggered` und `alert.cleared` in derselben Transaktion wie die Änderung am Trigger. Die Ereignisse werden nach Topic, Regel, Entität und Zeitstempel dedupliziert.
+
+## Zustellung
+
+### E-Mail
+
+Offene, noch nicht versendete Trigger werden nach Tenant und Empfängermenge gruppiert. Mehrere Regeln für denselben Tenant und dieselbe Empfängergruppe erzeugen eine gebündelte Nachricht mit dem Template `alert.bundle`.
+
+Die Frequenz steuert den Mindestabstand zwischen Nachrichten:
+
+| Frequenz | Mindestabstand |
+|---|---|
+| `immediate` | keine Verzögerung |
+| `daily` | ungefähr 23 Stunden |
+| `weekly` | ungefähr 6 Tage und 23 Stunden |
+
+Die Engine wertet Regeln unabhängig von der Frequenz bei jedem Lauf aus. Die Frequenz steuert nur die Zustellung. `message_id` wird erst nach erfolgreichem Einreihen in den Mailversand gesetzt. Bei einem Fehler bleibt der Trigger offen und kann später erneut verarbeitet werden.
+
+Für die E-Mail stehen folgende Endpunkte zur Verfügung:
+
+- `GET /alerts/rules/{rule_id}/preview`: Vorschau mit demselben Template rendern.
+- `POST /alerts/rules/{rule_id}/test-mail`: Test-Mail senden, ohne Trigger- oder Unterdrückungsstatus zu verändern.
+
+### Webhook
+
+Ein Webhook verwendet eine Event-Subscription mit dem Topic `alert.*` und einem Filter auf die Regel. Die Subscription wird mit `PUT /alerts/rules/{rule_id}/webhooks/{endpoint}` erstellt oder reaktiviert.
+
+Self-Service-Subscriptions sind nur für Endpoints mit `kind=webhook` und `auth=hmac` zulässig. Bearer- oder System-Endpoints werden operativ verwaltet und können nicht selbst abonniert werden.
+
+Der Event-Pipeline übermittelt Alert-Ereignisse als CloudEvents-Batch. Für zusätzliche Alert-Details kann der Empfänger die Alert-API abfragen. Zustellung, HMAC-Signatur, Wiederholungen und Zustellversuche verwaltet die Event-Pipeline.
+
+### Inbox
+
+Für jeden Regel- und Personenkontext verwaltet `alert.rule_subscriber` eine Subscription. Für jede Zustellung und jeden berechtigten Subscriber entsteht ein `event.inbox_item`.
+
+Die Inbox unterstützt folgende Zustände und Aktionen:
+
+- **Lesen:** `read_at` wird gesetzt.
+- **Bestätigen:** `acknowledged_at` wird gesetzt und der Eintrag gleichzeitig als gelesen markiert.
+- **Zurückstellen:** `snoozed_until` wird gesetzt, der Eintrag wird gelesen, bleibt aber unbestätigt.
+- **Stummschalten:** Subscriber mit einem zukünftigen `muted_until` erhalten für die Zustellung keinen Inbox-Eintrag.
+
+Ein zurückgestellter Eintrag wird nach Ablauf von `snoozed_until` wieder sichtbar.
+
+## Subscriber Management
+
+Die Subscriber-API verwaltet Inbox-Empfänger unabhängig von den E-Mail-Empfängern einer Regel.
+
+| Methode | Pfad | Verhalten |
+|---|---|---|
+| `PUT` | `/alerts/rules/{rule_id}/subscribers` | Fügt einen Subscriber idempotent hinzu, aktualisiert optionale Personendaten und hebt eine bestehende Stummschaltung auf. |
+| `DELETE` | `/alerts/rules/{rule_id}/subscribers/{email}` | Entfernt die Subscription. |
+| `POST` | `/alerts/rules/{rule_id}/subscribers/{email}/mute` | Setzt `muted_until`; `null` hebt die Stummschaltung auf. |
+| `GET` | `/alerts/rules/{rule_id}/channels` | Liefert E-Mail-Empfänger, Inbox-Subscriber und Webhook-Subscriptions. |
+
+Die E-Mail-Adresse ist der dauerhafte Schlüssel. Die API arbeitet mit Anwendungstokens und nicht mit persönlichen Benutzertokens, deshalb ist die Person nicht zwingend direkt im Token enthalten.
+
+## API-Endpunkte
+
+### Metriken
+
+<ExpandableGroup>
+  <Expandable title="Metriken">
+
+  | Methode | Pfad | Beschreibung |
+  |---|---|---|
+  | `GET` | `/alerts/metrics` | Verfügbare Metriken mit Richtung, statistischem Status und Aktualität. |
+  | `GET` | `/alerts/metrics/{metric}/values` | Aktuelle Messwerte ohne Schwellenwertprüfung. |
+
+  </Expandable>
+</ExpandableGroup>
+
+### Regeln
+
+<ExpandableGroup>
+  <Expandable title="Regeln">
+
+  | Methode | Pfad | Beschreibung |
+  |---|---|---|
+  | `GET` | `/alerts/rules` | Regeln auflisten. |
+  | `POST` | `/alerts/rules` | Regel erstellen, immer inaktiv. |
+  | `PATCH` | `/alerts/rules/{rule_id}` | Regel bearbeiten und automatisch deaktivieren. |
+  | `POST` | `/alerts/rules/{rule_id}/activate` | Regel mit Bestätigung aktivieren. |
+  | `POST` | `/alerts/rules/{rule_id}/deactivate` | Regel deaktivieren. |
+  | `GET` | `/alerts/rules/{rule_id}/preview` | Mail-Vorschau rendern. |
+  | `POST` | `/alerts/rules/{rule_id}/test-mail` | Test-Mail senden. |
+  | `GET` | `/alerts/rules/{rule_id}/history` | Änderungs- und Aktivierungsverlauf abrufen. |
+
+  </Expandable>
+</ExpandableGroup>
+
+### Dry-Run und Trigger
+
+<ExpandableGroup>
+  <Expandable title="Dry-Run und Trigger">
+
+  | Methode | Pfad | Beschreibung |
+  |---|---|---|
+  | `POST` | `/alerts/dry-run` | Dry-Run für Metrik und Schwellenwert ausführen. |
+  | `GET` | `/alerts/triggered` | Ausgelöste Alerts mit Filtern für `seit`, `nur_offene` und `rule_id` abrufen. |
+
+  </Expandable>
+</ExpandableGroup>
+
+### Fields und UI
+
+<ExpandableGroup>
+  <Expandable title="Fields und UI">
+
+  | Methode | Pfad | Beschreibung |
+  |---|---|---|
+  | `GET` | `/alerts/fields` | Formular-Deskriptoren abrufen. |
+  | `GET` | `/alerts/ui` | UI-Render-Deskriptoren für `overview`, `rule`, `preview` und `history` abrufen. |
+
+  </Expandable>
+</ExpandableGroup>
+
+### Channels
+
+<ExpandableGroup>
+  <Expandable title="Channels">
+
+  | Methode | Pfad | Beschreibung |
+  |---|---|---|
+  | `GET` | `/alerts/endpoints` | Verfügbare Webhook-Endpoints abrufen. |
+  | `GET` | `/alerts/rules/{rule_id}/channels` | Alle Kanäle einer Regel abrufen. |
+  | `PUT` | `/alerts/rules/{rule_id}/subscribers` | Inbox-Subscriber hinzufügen oder aktualisieren. |
+  | `DELETE` | `/alerts/rules/{rule_id}/subscribers/{email}` | Subscriber entfernen. |
+  | `POST` | `/alerts/rules/{rule_id}/subscribers/{email}/mute` | Subscriber stummschalten oder Stummschaltung entfernen. |
+  | `PUT` | `/alerts/rules/{rule_id}/webhooks/{endpoint}` | Webhook-Subscription erstellen oder reaktivieren. |
+  | `DELETE` | `/alerts/rules/{rule_id}/webhooks/{endpoint}` | Webhook-Subscription entfernen. |
+
+  </Expandable>
+</ExpandableGroup>
+
+### Inbox
+
+<ExpandableGroup>
+  <Expandable title="Inbox">
+
+  | Methode | Pfad | Beschreibung |
+  |---|---|---|
+  | `GET` | `/alerts/inbox` | Inbox-Einträge abfragen. |
+  | `GET` | `/alerts/inbox/count` | Anzahl ungelesener Einträge abrufen. |
+  | `POST` | `/alerts/inbox/read` | Einträge als gelesen markieren. |
+  | `POST` | `/alerts/inbox/{item_id}/ack` | Eintrag bestätigen. |
+  | `POST` | `/alerts/inbox/{item_id}/snooze` | Eintrag zurückstellen. |
+
+  </Expandable>
+</ExpandableGroup>
+
+## CLI
+
+| Befehl | Beschreibung |
+|---|---|
+| `tdm-alerts run` | Alert-Engine ausführen: Regeln auswerten, Trigger erzeugen oder bereinigen, Events schreiben und Mail einreihen. |
+| `tdm-alerts dry-run --metric ... --threshold ...` | Historischen Dry-Run für eine Metrik ausführen. |
+| `tdm-alerts metrics` | Registrierte Metriken auflisten. |
+| `tdm-alerts create ...` | Regel erstellen, immer inaktiv. |
+| `tdm-alerts update ...` | Regel bearbeiten und automatisch deaktivieren. |
+| `tdm-alerts set-active --rule-id ... --aktiv` | Regel aktivieren, optional mit `--gesehene-treffer`. |
+| `tdm-alerts set-active --rule-id ... --inaktiv` | Regel deaktivieren. |
+
+`tdm-mail-deliver --with-alerts` führt die Alert-Engine vor der Mail- und Event-Zustellung aus. Dadurch können neue `immediate`-Alerts im selben Worker-Lauf ausgewertet und eingereiht werden.
+
+## Datenbanktabellen
+
+| Tabelle | Zweck |
+|---|---|
+| `alert.metric` | Registrierte Metriken mit Richtung, statistischem Status und Aktualität. |
+| `alert.rule` | Regelkonfiguration mit aktivem oder inaktivem Status. |
+| `alert.rule_history` | Änderungs-, Aktivierungs- und Dry-Run-Verlauf. |
+| `alert.trigger` | Aktuelle und historische Alert-Trigger pro Entität. |
+| `alert.rule_subscriber` | Inbox-Subscriber pro Regel. |
+| `event.inbox_item` | Inbox-Zustellungen pro Person mit Read-, Ack- und Snooze-Status. |

@@ -1,0 +1,1516 @@
+---
+
+title: Aggregates API
+description: Aggregate analytics for dashboards and BI: available datasets, measures, dimensions, filters, suppression, pagination, caching, and rate limits.
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+## Uebersicht
+
+Die Aggregates API liefert aggregierte Analytics-Daten für Dashboards und BI-Anwendungen. Statt einzelner Datensätze arbeiten Abfragen mit **Measures** und **Dimensions**, sodass du Kennzahlen nach Zeit, Marke, Reise oder weiteren Dimensionen gruppieren kannst.
+
+Die API stellt drei Endpunkte unter `/api/v1/aggregates` bereit. Alle Endpunkte erfordern ein Entra-JWT im `Authorization`-Header.
+
+<Callout kind="info" collapsed="false">
+  Die personalbezogenen Funktionen benötigen `READ_API_AGGREGATES_PERSONAL=true`. Ohne diese Einstellung wird das Dataset `guide_ratings` nicht angezeigt. Im Dataset `staff_days` bleibt die Dimension `person` verborgen.
+</Callout>
+
+## Endpoints
+
+| Methode und Pfad                          | Zweck                                                                                                           |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/aggregates`                  | Selbstbeschreibung mit verfügbaren Datasets, Measures, Dimensions, Limits und caller-spezifischen Einstellungen |
+| `POST /api/v1/aggregates/{dataset}/query` | Aggregatabfrage mit Measures, Dimensions, Filtern, Zeitbereich, Sortierung und Cursor-Paginierung               |
+| `GET /api/v1/aggregates/{dataset}/values` | Verfügbare Filterwerte für eine Dimension, optional innerhalb eines Zeitfensters                                |
+
+### GET `/api/v1/aggregates` (Self-Description)
+
+Der Endpunkt beschreibt die für den aktuellen Caller sichtbare API. Die Antwort enthält die Vertragsversion, `min_group`, den Suppressionsmodus, globale Abfragelimits sowie die sichtbaren Datasets mit ihren Measures und Dimensions.
+
+Personalisierte Datasets oder Dimensions werden ausgeblendet, sofern `READ_API_AGGREGATES_PERSONAL` nicht aktiviert ist.
+
+<Request show-lines="true">
+  ```bash
+  curl "https://api.example.org/api/v1/aggregates" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "contract_version": "1",
+    "min_group": 3,
+    "suppression": "primary",
+    "limits": {
+      "measures": 4,
+      "dimensions": 3,
+      "filters": 8,
+      "filter_values": 50,
+      "range_days": 366,
+      "range_days_with_day": 92,
+      "limit": 5000,
+      "operators": ["in"]
+    },
+    "datasets": [
+      {
+        "id": "departures",
+        "label": "Abreisen",
+        "measures": [
+          {
+            "id": "departures",
+            "label": "Abreisen",
+            "type": "number",
+            "min_group": false
+          },
+          {
+            "id": "participants",
+            "label": "Teilnehmende",
+            "type": "number",
+            "min_group": true
+          }
+        ],
+        "dimensions": [
+          {
+            "id": "month",
+            "label": "Monat",
+            "type": "time",
+            "filterable": false
+          },
+          {
+            "id": "brand",
+            "label": "Marke",
+            "type": "text",
+            "filterable": true
+          }
+        ],
+        "notes": []
+      }
+    ]
+  }
+  ```
+</Response>
+
+### POST `/api/v1/aggregates/{dataset}/query`
+
+Der Query-Endpunkt führt eine Abfrage für ein Dataset aus. Die Antwort enthält Metadaten zu den Spalten und positionale Zeilenwerte.
+
+#### Pfadparameter
+
+<ParamField path="dataset" param-type="string" required="true" deprecated="false" show-location="true">
+  Dataset-ID, zum Beispiel `departures`, `bookings`, `feedback`, `vehicle_days`, `staff_days` oder `guide_ratings`.
+</ParamField>
+
+Unbekannte oder deaktivierte Datasets führen zu `404 not_found`.
+
+#### Request-Body
+
+<ParamField body="measures" param-type="array of strings" required="true" deprecated="false" show-location="true">
+  Eine bis vier eindeutige Measures des ausgewählten Datasets.
+</ParamField>
+
+<ParamField body="dimensions" param-type="array of strings" required="false" deprecated="false" show-location="true">
+  Null bis drei eindeutige Dimensions. Ohne Dimensions liefert die Abfrage eine aggregierte Gesamtsumme.
+</ParamField>
+
+<ParamField body="filters" param-type="array" required="false" deprecated="false" show-location="true">
+  Maximal acht Filter, höchstens ein Filter pro Dimension.
+</ParamField>
+
+<ParamField body="time_range" param-type="object" required="true" deprecated="false" show-location="true">
+  Einschließender Zeitbereich mit den ISO-Datumsfeldern `from` und `to`.
+</ParamField>
+
+<ParamField body="sort" param-type="array" required="false" deprecated="false" show-location="true">
+  Optionale Sortierung nach angeforderten Dimensions oder Measures.
+</ParamField>
+
+<ParamField body="limit" param-type="integer" required="false" deprecated="false" show-location="true">
+  Anzahl der gewünschten Zeilen. Erlaubt sind Werte von 1 bis 5000. Standardwert ist 1000.
+</ParamField>
+
+<ParamField body="cursor" param-type="string or null" required="false" deprecated="false" show-location="true">
+  Opaque Cursor aus der vorherigen Antwort. Verwende `null` oder lasse das Feld bei der ersten Seite weg.
+</ParamField>
+
+Ein vollständiger Request kann so aussehen:
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/departures/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["departures", "participants"],
+      "dimensions": ["month", "brand"],
+      "filters": [
+        {
+          "dimension": "destination_country",
+          "op": "in",
+          "values": ["IT", "GR"]
+        }
+      ],
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "sort": [
+        {
+          "id": "month",
+          "dir": "asc"
+        }
+      ],
+      "limit": 1000,
+      "cursor": null
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "departures",
+    "columns": [
+      {
+        "id": "month",
+        "kind": "dimension",
+        "label": "Monat",
+        "type": "time"
+      },
+      {
+        "id": "brand",
+        "kind": "dimension",
+        "label": "Marke",
+        "type": "text"
+      },
+      {
+        "id": "departures",
+        "kind": "measure",
+        "label": "Abreisen",
+        "type": "number"
+      },
+      {
+        "id": "participants",
+        "kind": "measure",
+        "label": "Teilnehmende",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["2031-03", "twr", 84, 126]
+    ],
+    "suppressed": 0,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {
+      "brand": {
+        "twr": "Twerenbold"
+      }
+    },
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-03-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "primary"
+      }
+    }
+  }
+  ```
+</Response>
+
+#### Filter
+
+Filter verwenden ausschließlich den Operator `in`.
+
+```json
+{
+  "dimension": "brand",
+  "op": "in",
+  "values": ["twr", "rmt"]
+}
+```
+
+Für Filter gelten folgende Regeln:
+
+- Pro Filter sind 1 bis 50 Werte erlaubt.
+- Jeder Wert ist ein String mit 1 bis 64 Zeichen.
+- Werte müssen in der geschlossenen Werteliste der Dimension vorhanden sein.
+- `not_in`, `like`, Ausdrücke und beliebiges SQL werden nicht unterstützt.
+- Unbekannte Felder werden abgelehnt, weil die Request-Modelle `extra="forbid"` verwenden.
+- Doppelte Measures, Dimensions oder Filter für dieselbe Dimension sind ungültig.
+
+#### Zeitbereiche
+
+`from` und `to` sind inklusive. Der allgemeine maximale Zeitbereich beträgt 366 Tage. Wenn die Dimension `day` angefordert wird, gilt normalerweise ein Maximum von 92 Tagen. Für `vehicle_days` sind mit `day` bis zu 366 Tage erlaubt.
+
+#### Fehlercodes
+
+| HTTP | Code              | Bedeutung                                                                            |
+| ---: | ----------------- | ------------------------------------------------------------------------------------ |
+|  400 | `invalid_spec`    | Ungültiger Request, unbekannte Measure oder Dimension, ungültiger Filter oder Cursor |
+|  400 | `range_too_large` | Der Zeitbereich überschreitet das zulässige Maximum                                  |
+|  403 | `forbidden`       | Der Caller darf Dataset oder Marke nicht abfragen                                    |
+|  404 | `not_found`       | Dataset ist unbekannt, deaktiviert oder personalbezogen nicht freigeschaltet         |
+|  429 | `rate_limited`    | Der Caller hat das Abfragelimit überschritten                                        |
+|  503 | `unavailable`     | Datenbank nicht verfügbar oder Abfrage-Timeout                                       |
+
+<Callout kind="warning" collapsed="false">
+  Alle Aggregatabfragen laufen in schreibgeschützten Transaktionen mit einem Statement-Timeout von fünf Sekunden. Schreiboperationen werden nicht unterstützt.
+</Callout>
+
+### GET `/api/v1/aggregates/{dataset}/values`
+
+Der Values-Endpunkt liefert die verfügbaren Werte einer filterbaren Dimension. Du kannst den Zeitraum mit `from` und `to` begrenzen.
+
+<ParamField path="dataset" param-type="string" required="true" deprecated="false" show-location="true">
+  Dataset-ID.
+</ParamField>
+
+<ParamField query="dimension" param-type="string" required="true" deprecated="false" show-location="true">
+  Filterbare Dimension des ausgewählten Datasets.
+</ParamField>
+
+<ParamField query="from" param-type="ISO date" required="false" deprecated="false" show-location="true">
+  Startdatum des Zeitfensters.
+</ParamField>
+
+<ParamField query="to" param-type="ISO date" required="false" deprecated="false" show-location="true">
+  Enddatum des Zeitfensters.
+</ParamField>
+
+Wenn keine Datumsgrenze angegeben wird, verwendet die API ein 366-Tage-Fenster um den aktuellen Tag. Bei nur einer Grenze ergänzt die API die andere Grenze zu einem 366-Tage-Fenster.
+
+<Request show-lines="true">
+  ```bash
+  curl "https://api.example.org/api/v1/aggregates/departures/values?dimension=destination_country&from=2031-03-01&to=2031-03-31" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "departures",
+    "dimension": "destination_country",
+    "time_range": {
+      "from": "2031-03-01",
+      "to": "2031-03-31"
+    },
+    "values": [
+      {
+        "value": "CH",
+        "label": "Schweiz"
+      },
+      {
+        "value": "IT",
+        "label": "Italien"
+      }
+    ],
+    "truncated": false
+  }
+  ```
+</Response>
+
+`dimension` muss filterbar sein. Die Antwort setzt `truncated` auf `true`, wenn mindestens 5000 Werte gefunden werden.
+
+## Datasets
+
+Die API stellt sechs Datasets bereit. `staff_days` enthält eine personalgeschützte Dimension. `guide_ratings` ist vollständig personalgeschützt.
+
+### `departures` (Abreisen)
+
+#### Measures
+
+- `departures`: Anzahl der Abreisezeilen
+- `participants`: Anzahl der benannten Teilnehmenden
+- `pax`: In Buchungen erfasste Pax-Anzahl
+
+#### Dimensions
+
+`day`, `week`, `month`, `year`, `brand`, `trip`, `trip_category`, `destination_country`
+
+Eine Abreise entspricht einem Paar aus Reise und Abreisedatum. `participants` zählt benannte Teilnehmerzeilen, während `pax` den in der Buchung gespeicherten Pax-Wert verwendet. Eine Gruppenbuchung kann deshalb Pax enthalten, aber keine benannten Teilnehmer.
+
+Stornierte Buchungen werden aus den Abreise-, Teilnehmer- und Pax-Berechnungen ausgeschlossen. Eine Reise mit mehreren Zielländern kann in mehreren Länderzeilen erscheinen und darf deshalb nicht ohne Weiteres über `destination_country` summiert werden.
+
+Wenn `participants` angefordert wird und die Zeile weniger als `min_group` Teilnehmer enthält, werden alle Measures dieser Zeile unterdrückt. `departures` allein wird nicht unterdrückt.
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/departures/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["departures", "participants"],
+      "dimensions": ["trip"],
+      "filters": [
+        {
+          "dimension": "brand",
+          "op": "in",
+          "values": ["agg-a", "agg-b"]
+        }
+      ],
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "limit": 1000
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "departures",
+    "columns": [
+      {
+        "id": "trip",
+        "kind": "dimension",
+        "label": "Reise",
+        "type": "text"
+      },
+      {
+        "id": "departures",
+        "kind": "measure",
+        "label": "Abreisen",
+        "type": "number"
+      },
+      {
+        "id": "participants",
+        "kind": "measure",
+        "label": "Teilnehmende",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["aggone", 2, 5],
+      ["aggtwo", "<3", "<3"]
+    ],
+    "suppressed": 1,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {
+      "trip": {
+        "aggone": "Alpenreise",
+        "aggtwo": "Südtirol"
+      }
+    },
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-03-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "primary"
+      }
+    }
+  }
+  ```
+</Response>
+
+### `vehicle_days` (Fahrzeug-Tage)
+
+#### Measures
+
+- `vehicle_days`: Anzahl eindeutiger Kombinationen aus Fahrzeug und Kalendertag
+- `vehicles_in_use`: Anzahl eindeutiger Fahrzeuge
+- `full_days`: Ganze Fahrzeugtage
+- `half_days`: Halbe Fahrzeugtage
+- `operating_days`: `full_days + half_days * 0.5`
+
+#### Dimensions
+
+`day`, `week`, `month`, `year`, `vehicle`, `category`, `brand`, `trip`
+
+Die Kategorien werden aus Dispositionstypen abgeleitet:
+
+| Typcode | Kategorie      |
+| ------: | -------------- |
+|       1 | `package_tour` |
+|       2 | `charter`      |
+|       5 | `feeder`       |
+|       7 | `internal`     |
+|       9 | `downtime`     |
+
+Ein Fahrzeugtag entspricht einem Fahrzeug an einem Kalendertag. Mehrtägige Einsätze oder Einsätze ohne Uhrzeiten zählen als ganze Tage. Bei eintägigen Einsätzen zählen bis einschließlich fünf Stunden als halber Tag, mehr als fünf Stunden als ganzer Tag.
+
+`brand` und `trip` werden nur für Pauschalreisen befüllt. Externe Fahrzeuge verwenden den Wert `_external`. Mit der Dimension `day` darf dieses Dataset einen vollständigen Jahreszeitraum abfragen.
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/vehicle_days/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["vehicle_days", "full_days"],
+      "dimensions": ["day", "category"],
+      "time_range": {
+        "from": "2031-07-01",
+        "to": "2031-07-31"
+      }
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "vehicle_days",
+    "columns": [
+      {
+        "id": "day",
+        "kind": "dimension",
+        "label": "Tag",
+        "type": "date"
+      },
+      {
+        "id": "category",
+        "kind": "dimension",
+        "label": "Einsatzart",
+        "type": "text"
+      },
+      {
+        "id": "vehicle_days",
+        "kind": "measure",
+        "label": "Fahrzeug-Tage",
+        "type": "number"
+      },
+      {
+        "id": "full_days",
+        "kind": "measure",
+        "label": "Ganze Tage",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["2031-07-01", "charter", 4, 3],
+      ["2031-07-02", "downtime", 2, 2]
+    ],
+    "suppressed": 0,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {},
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-07-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-07-01",
+        "to": "2031-07-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "none"
+      }
+    }
+  }
+  ```
+</Response>
+
+### `feedback` (Rueckmeldungen)
+
+#### Measures
+
+- `responses`: Anzahl eindeutiger Feedback- oder Survey-Antworten
+- `ratings`: Anzahl der Bewertungswerte
+- `avg_rating`: Durchschnittlicher normalisierter Wert auf einer Skala von 0 bis 10
+- `nps`: Net Promoter Score
+- `nps_responses`: Anzahl der NPS-Antworten
+
+#### Dimensions
+
+`month`, `year`, `brand`, `trip`, `trip_category`, `departure_month`, `question`, `question_group`
+
+`month` und `year` beziehen sich auf den Eingang oder Erstellungszeitpunkt des Feedbacks. `departure_month` bezieht sich auf den Monat der zugehörigen Abreise.
+
+Für den NPS zählen Werte von 9 bis 10 als Promoter und Werte von 0 bis 6 als Detractor. Das Ergebnis ist die Differenz der beiden Prozentwerte. Ratings werden auf 0 bis 10 normalisiert. Freitext, Namen und rohe Antworttexte werden nicht zurückgegeben.
+
+Die Measures `responses`, `ratings` und `nps_responses` unterliegen der Unterdrückung.
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/feedback/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["responses", "nps", "avg_rating"],
+      "dimensions": ["trip"],
+      "filters": [
+        {
+          "dimension": "brand",
+          "op": "in",
+          "values": ["agg-a", "agg-b"]
+        }
+      ],
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      }
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "feedback",
+    "columns": [
+      {
+        "id": "trip",
+        "kind": "dimension",
+        "label": "Reise",
+        "type": "text"
+      },
+      {
+        "id": "responses",
+        "kind": "measure",
+        "label": "Antworten",
+        "type": "number"
+      },
+      {
+        "id": "nps",
+        "kind": "measure",
+        "label": "NPS",
+        "type": "number"
+      },
+      {
+        "id": "avg_rating",
+        "kind": "measure",
+        "label": "Durchschnittliche Bewertung",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["aggone", 4, 50, 8.0],
+      ["aggtwo", "<3", "<3", "<3"]
+    ],
+    "suppressed": 1,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {},
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-03-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "primary"
+      }
+    }
+  }
+  ```
+</Response>
+
+### `bookings` (Buchungen)
+
+#### Measures
+
+- `bookings`: Anzahl eindeutiger Buchungen
+- `participants`: Anzahl benannter Teilnehmender
+- `pax`: In Buchungen gespeicherte Pax-Anzahl
+
+#### Dimensions
+
+`day`, `week`, `month`, `year`, `brand`, `trip_owner`, `trip`, `trip_category`, `destination_country`, `status`, `booking_month`
+
+Zeitdimensions beziehen sich auf das Startdatum der Reise. `booking_month` verwendet das Erfassungsdatum der Buchung.
+
+`brand` ist die Marke, die die Buchung besitzt. `trip_owner` ist die Marke, der die Reise gehört. Ohne eine `status`-Dimension oder einen Statusfilter werden nur nicht stornierte Buchungen berücksichtigt. Sobald `status` angefordert oder gefiltert wird, sind alle Statuswerte enthalten.
+
+Das Dataset liefert ausschließlich aggregierte Zählwerte. Buchungsbeträge, Vertriebsmitarbeiter, Kundendaten und andere Kundenattribute werden nicht veröffentlicht.
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/bookings/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["bookings", "participants", "pax"],
+      "dimensions": ["brand", "trip_owner"],
+      "filters": [
+        {
+          "dimension": "trip_owner",
+          "op": "in",
+          "values": ["agg-a"]
+        }
+      ],
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      }
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "bookings",
+    "columns": [
+      {
+        "id": "brand",
+        "kind": "dimension",
+        "label": "Marke der Buchung",
+        "type": "text"
+      },
+      {
+        "id": "trip_owner",
+        "kind": "dimension",
+        "label": "Marke der Reise",
+        "type": "text"
+      },
+      {
+        "id": "bookings",
+        "kind": "measure",
+        "label": "Buchungen",
+        "type": "number"
+      },
+      {
+        "id": "participants",
+        "kind": "measure",
+        "label": "Teilnehmende",
+        "type": "number"
+      },
+      {
+        "id": "pax",
+        "kind": "measure",
+        "label": "Pax",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["agg-b", "agg-a", 3, 6, 6]
+    ],
+    "suppressed": 0,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {},
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-03-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "primary"
+      }
+    }
+  }
+  ```
+</Response>
+
+### `staff_days` (Personal-Tage)
+
+<Callout kind="info" collapsed="false">
+  `staff_days` ist ohne den Personal-Schalter verfügbar. Die Dimension `person` wird jedoch nur angezeigt, wenn `READ_API_AGGREGATES_PERSONAL=true` gesetzt ist.
+</Callout>
+
+#### Measures
+
+- `staff_days`: Anzahl eindeutiger Kombinationen aus Person und Tag
+- `staff`: Anzahl eindeutiger Personen
+
+#### Dimensions
+
+`day`, `week`, `month`, `year`, `brand`, `trip`, `role`, `category`, `vehicle`, `person`
+
+Die Dimension `person` ist personalgeschützt. Das Dataset enthält Reiseleitungen vom Typ 4 sowie Fahrer und Begleitpersonen aus den Typen 1, 2, 5 und 7. Downtime vom Typ 9 wird nur im Personalmodus einbezogen.
+
+Ohne `person` basiert die Unterdrückung auf der Anzahl eindeutiger Personen. Mit `person` dient die Abfrage ausdrücklich der personenbezogenen Analyse; die Gruppensuppression ist für diese Dimension deaktiviert.
+
+#### Abfrage ohne Personalmodus
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/staff_days/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["staff_days", "staff"],
+      "dimensions": ["trip"],
+      "filters": [
+        {
+          "dimension": "brand",
+          "op": "in",
+          "values": ["agg-a", "agg-b"]
+        }
+      ],
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      }
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "staff_days",
+    "columns": [
+      {
+        "id": "trip",
+        "kind": "dimension",
+        "label": "Reise",
+        "type": "text"
+      },
+      {
+        "id": "staff_days",
+        "kind": "measure",
+        "label": "Personal-Tage",
+        "type": "number"
+      },
+      {
+        "id": "staff",
+        "kind": "measure",
+        "label": "Personal",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["aggone", 6, 3],
+      ["aggtwo", "<3", "<3"]
+    ],
+    "suppressed": 1,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {},
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-03-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "primary"
+      }
+    }
+  }
+  ```
+</Response>
+
+#### Abfrage mit Personalmodus
+
+Mit aktiviertem Personalmodus kannst du die Dimension `person` abfragen:
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/staff_days/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["staff_days"],
+      "dimensions": ["person"],
+      "filters": [
+        {
+          "dimension": "trip",
+          "op": "in",
+          "values": ["aggtwo"]
+        }
+      ],
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      }
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "staff_days",
+    "columns": [
+      {
+        "id": "person",
+        "kind": "dimension",
+        "label": "Person",
+        "type": "text"
+      },
+      {
+        "id": "staff_days",
+        "kind": "measure",
+        "label": "Personal-Tage",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["Rl Leitung4", 1]
+    ],
+    "suppressed": 0,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {},
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-03-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "primary"
+      }
+    }
+  }
+  ```
+</Response>
+
+### `guide_ratings` (Bewertungen je Reiseleitung/Chauffeur)
+
+<Callout kind="alert" collapsed="false">
+  Das gesamte Dataset `guide_ratings` ist personalgeschützt. Ohne `READ_API_AGGREGATES_PERSONAL=true` wird es aus der Self-Description entfernt. Ein Query liefert dann `404 not_found`.
+</Callout>
+
+#### Measures
+
+`responses`, `ratings`, `avg_rating`, `nps`, `nps_responses`
+
+#### Dimensions
+
+`month`, `year`, `brand`, `trip`, `question`, `question_group`, `role`, `person`
+
+Das Dataset verbindet Feedback mit Fahrer- oder Chauffeurinformationen aus dem Feedback sowie mit Reiseleitungen aus der Dispositions- und Abreisedatenbasis.
+
+<Request show-lines="true">
+  ```bash
+  curl -X POST "https://api.example.org/api/v1/aggregates/guide_ratings/query" \
+    -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "measures": ["responses", "nps"],
+      "dimensions": ["role", "person"],
+      "filters": [
+        {
+          "dimension": "brand",
+          "op": "in",
+          "values": ["agg-a"]
+        }
+      ],
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      }
+    }'
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "dataset": "guide_ratings",
+    "columns": [
+      {
+        "id": "role",
+        "kind": "dimension",
+        "label": "Rolle",
+        "type": "text"
+      },
+      {
+        "id": "person",
+        "kind": "dimension",
+        "label": "Person",
+        "type": "text"
+      },
+      {
+        "id": "responses",
+        "kind": "measure",
+        "label": "Antworten",
+        "type": "number"
+      },
+      {
+        "id": "nps",
+        "kind": "measure",
+        "label": "NPS",
+        "type": "number"
+      }
+    ],
+    "rows": [
+      ["driver", "Test Chauffeur", 4, 50]
+    ],
+    "suppressed": 0,
+    "truncated": false,
+    "next_cursor": null,
+    "labels": {},
+    "provenance": {
+      "source": "twg-mirror",
+      "env": "prod",
+      "contract_version": "1",
+      "as_of": "2031-03-31T02:05:00+00:00",
+      "time_range": {
+        "from": "2031-03-01",
+        "to": "2031-03-31"
+      },
+      "suppression": {
+        "min_group": 3,
+        "mode": "primary"
+      }
+    }
+  }
+  ```
+</Response>
+
+## Response Schema
+
+Die Query-Antwort enthält Spaltenmetadaten und positionale Zeilen. Der Wert an Position `n` in jeder Zeile gehört zur Spalte an Position `n` in `columns`.
+
+### Antwortfelder
+
+<ResponseField name="dataset" field-type="string" required="true" deprecated="false">
+  ID des abgefragten Datasets.
+</ResponseField>
+
+<ResponseField name="columns" field-type="array" required="true" deprecated="false">
+  Geordnete Metadaten der zurückgegebenen Dimensions und Measures.
+</ResponseField>
+
+<ResponseField name="rows" field-type="array of arrays" required="true" deprecated="false">
+  Positionale Ergebniszeilen. Die Werte folgen exakt der Reihenfolge von `columns`.
+</ResponseField>
+
+<ResponseField name="suppressed" field-type="integer" required="true" deprecated="false">
+  Anzahl der Zeilen, in denen mindestens ein Measure unterdrückt wurde.
+</ResponseField>
+
+<ResponseField name="truncated" field-type="boolean" required="true" deprecated="false">
+  `true`, wenn eine zusätzliche Zeile geladen wurde und eine weitere Seite existiert.
+</ResponseField>
+
+<ResponseField name="next_cursor" field-type="string or null" required="true" deprecated="false">
+  Cursor für die nächste Seite oder `null`, wenn keine weitere Seite existiert.
+</ResponseField>
+
+<ResponseField name="labels" field-type="object" required="true" deprecated="false">
+  Labels für Werte zurückgegebener Dimensions, sofern für die Dimension eine Label-Abfrage konfiguriert ist.
+</ResponseField>
+
+<ResponseField name="provenance" field-type="object" required="true" deprecated="false">
+  Herkunft und Ausführungsdetails der Antwort.
+</ResponseField>
+
+Die `provenance`-Struktur enthält:
+
+- `source`: immer `twg-mirror`
+- `env`: konfigurierte Umgebung, beispielsweise `dev` oder `prod`
+- `contract_version`: derzeit `"1"`
+- `as_of`: Zeitpunkt des letzten erfolgreichen Sync-Laufs
+- `time_range`: tatsächlich verwendeter Zeitbereich
+- `suppression`: angewendetes `min_group` und Modus
+
+Eine vollständige Antwort:
+
+```json
+{
+  "dataset": "departures",
+  "columns": [
+    {
+      "id": "month",
+      "kind": "dimension",
+      "label": "Monat",
+      "type": "time"
+    },
+    {
+      "id": "brand",
+      "kind": "dimension",
+      "label": "Marke",
+      "type": "text"
+    },
+    {
+      "id": "departures",
+      "kind": "measure",
+      "label": "Abreisen",
+      "type": "number"
+    }
+  ],
+  "rows": [
+    ["2031-03", "twr", 84]
+  ],
+  "suppressed": 0,
+  "truncated": false,
+  "next_cursor": null,
+  "labels": {
+    "brand": {
+      "twr": "Twerenbold"
+    }
+  },
+  "provenance": {
+    "source": "twg-mirror",
+    "env": "prod",
+    "contract_version": "1",
+    "as_of": "2031-03-31T02:05:00+00:00",
+    "time_range": {
+      "from": "2031-03-01",
+      "to": "2031-03-31"
+    },
+    "suppression": {
+      "min_group": 3,
+      "mode": "primary"
+    }
+  }
+}
+```
+
+## Pagination
+
+Die Paginierung verwendet einen opaken Cursor. Intern lädt die API `limit + 1` Zeilen und verwendet den decodierten Cursor als Offset. Die zusätzliche Zeile wird verworfen und setzt `truncated` auf `true`.
+
+Der Cursor kodiert als Base64url-JSON den Offset und einen Hash der kanonischen Abfrage. Er ist an Dataset, Measures, Dimensions, Filter, Zeitbereich, Sortierung, Limit, Markenscope und `min_group` gebunden.
+
+### Erste Seite
+
+```json
+{
+  "measures": ["departures"],
+  "dimensions": ["trip"],
+  "time_range": {
+    "from": "2031-03-01",
+    "to": "2031-03-31"
+  },
+  "limit": 1
+}
+```
+
+Antwort:
+
+```json
+{
+  "dataset": "departures",
+  "columns": [
+    {
+      "id": "trip",
+      "kind": "dimension",
+      "label": "Reise",
+      "type": "text"
+    },
+    {
+      "id": "departures",
+      "kind": "measure",
+      "label": "Abreisen",
+      "type": "number"
+    }
+  ],
+  "rows": [
+    ["aggone", 2]
+  ],
+  "suppressed": 0,
+  "truncated": true,
+  "next_cursor": "eyJvIjoxLCJoIjoiY2Fub25pY2FsLWhhc2gifQ",
+  "labels": {
+    "trip": {
+      "aggone": "Alpenreise"
+    }
+  },
+  "provenance": {
+    "source": "twg-mirror",
+    "env": "prod",
+    "contract_version": "1",
+    "as_of": "2031-03-31T02:05:00+00:00",
+    "time_range": {
+      "from": "2031-03-01",
+      "to": "2031-03-31"
+    },
+    "suppression": {
+      "min_group": 3,
+      "mode": "primary"
+    }
+  }
+}
+```
+
+### Nächste Seite
+
+Sende denselben Request mit dem `next_cursor`-Wert:
+
+```json
+{
+  "measures": ["departures"],
+  "dimensions": ["trip"],
+  "time_range": {
+    "from": "2031-03-01",
+    "to": "2031-03-31"
+  },
+  "limit": 1,
+  "cursor": "eyJvIjoxLCJoIjoiY2Fub25pY2FsLWhhc2gifQ"
+}
+```
+
+Ein Cursor aus einer anderen Abfrage, einem anderen Dataset, einem anderen Filter, einem anderen Limit, einem anderen Markenscope oder einem anderen `min_group` wird mit `400 invalid_spec` abgelehnt.
+
+## Minimum-Group Suppression
+
+`min_group` wird caller-spezifisch aus `READ_API_CALLER_ACCESS` gelesen. Der Wert kann nicht im Request gesetzt werden.
+
+Die Standardwerte sind:
+
+- unbekannter Caller: `1`, keine Unterdrückung
+- Caller ohne konfigurierten Wert: `1`
+- typische externe Konfiguration: `3`
+
+Die API berechnet die Suppression mit einer internen Spalte `_suppressed`. Wenn die Unterstützung einer Zeile zwischen `1` und `min_group - 1` liegt, werden alle angeforderten Measures durch einen Wert wie `"<3"` ersetzt. Die Dimensions bleiben sichtbar und `suppressed` wird um eins erhöht.
+
+Eine sekundäre Unterdrückung ist derzeit nicht implementiert. Der Suppressionsmodus ist `none` für `min_group=1` und `primary` für `min_group>1`.
+
+| Dataset         | Grundlage der Suppression                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------- |
+| `departures`    | Teilnehmerunterstützung, wenn Teilnehmer-Measures beteiligt sind; `departures` allein bleibt sichtbar |
+| `vehicle_days`  | Keine persönliche Minimum-Group-Suppression                                                           |
+| `feedback`      | Survey-, Rating- und NPS-Unterstützung                                                                |
+| `bookings`      | Buchungs- und Personenunterstützung                                                                   |
+| `staff_days`    | Anzahl eindeutiger Personen, außer bei personenbezogener Dimension                                    |
+| `guide_ratings` | Antwortunterstützung                                                                                  |
+
+## Caller Access Control
+
+Die Aggregates API authentifiziert Caller über Entra JWT. Die Caller-Identität ist die Application-ID aus dem Token (`azp` bei v2-Tokens, `appid` bei v1-Tokens), nicht die Benutzer-Objekt-ID. Im lokalen Stub-Modus ist die Caller-ID `dev-stub`.
+
+### Caller-Konfiguration
+
+Pro Caller können in `READ_API_CALLER_ACCESS` folgende Felder konfiguriert werden:
+
+```json
+{
+  "client-id-123": {
+    "name": "maps-express",
+    "groups": ["aggregates"],
+    "datasets": ["departures", "vehicle_days"],
+    "brands": ["twr", "rmt"],
+    "min_group": 3
+  }
+}
+```
+
+| Feld        | Bedeutung                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------- |
+| `groups`    | Erlaubte Router-Gruppen. `aggregates` muss enthalten sein.                                      |
+| `datasets`  | Erlaubte Dataset-IDs. Ein nicht aufgeführtes Dataset liefert `404`.                             |
+| `brands`    | Erlaubte Marken. Wird für das Brand-Scoping verwendet. `"*"` gewährt uneingeschränkten Zugriff. |
+| `min_group` | Minimum-Group-Schwellenwert für die Suppression. Standard ist `1` (keine Unterdrückung).        |
+
+### Policy-Modi
+
+Die Durchsetzung wird über `READ_API_CALLER_POLICY` gesteuert:
+
+| Modus                   | Verhalten                                                                                                                        |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `permissive` (Standard) | Die Policy wird berechnet, aber Anfragen werden nicht blockiert. Verweigerungen werden nur geloggt (`caller_policy would_deny`). |
+| `enforce`               | Policy-Verletzungen führen zu `403 forbidden`. Der detaillierte Grund wird nur im Log erfasst.                                   |
+
+Mögliche Verweigerungsgründe im `enforce`-Modus:
+
+- `unknown_caller` — Caller-ID ist nicht konfiguriert
+- `group_not_allowed` — Caller hat keine `aggregates`-Gruppe
+- `dataset_not_allowed` — Dataset ist nicht in der Caller-Liste
+- `brand_not_allowed` — Angeforderte Marke ist nicht erlaubt
+
+### Brand-Scoping
+
+Im `enforce`-Modus gelten folgende Regeln:
+
+- Wenn ein Caller Marken im Filter angibt, die nicht in seiner Brand-Liste stehen, liefert die API `403`.
+- Wenn **kein** Marken-Filter angegeben wird, wird die Abfrage automatisch auf die erlaubten Marken des Callers eingeschränkt.
+- Beim Dataset `bookings` werden sowohl `brand` (Buchungsmarke) als auch `trip_owner` (Reisemarke) geprüft, da beide als Marken-Dimensionen definiert sind.
+- Ein `"*"` als Brand- oder Dataset-Eintrag gewährt uneingeschränkten Zugriff für diese Dimension.
+
+<Callout kind="tip" collapsed="false">
+  Im `permissive`-Modus kannst du die Policy-Konfiguration testen, ohne Anfragen zu blockieren. Wechsle zu `enforce`, sobald die Konfiguration validiert ist.
+</Callout>
+
+## Praktische Anwendungsbeispiele
+
+### Jahresvergleich: Abreisen nach Monat
+
+Vergleiche Teilnehmerzahlen über ein ganzes Jahr, gruppiert nach Monat und Marke:
+
+```bash
+curl -X POST "https://api.example.org/api/v1/aggregates/departures/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measures": ["departures", "participants"],
+    "dimensions": ["month", "brand"],
+    "time_range": {
+      "from": "2031-01-01",
+      "to": "2031-12-31"
+    },
+    "sort": [
+      {"id": "month", "dir": "asc"},
+      {"id": "brand", "dir": "asc"}
+    ],
+    "limit": 5000
+  }'
+```
+
+Die Antwort enthält eine Zeile pro Monat-Marke-Kombination. Verwende das `labels`-Objekt, um Marken-IDs in lesbare Namen aufzulösen.
+
+### Top-10-Reisen nach Teilnehmerzahl
+
+Sortiere absteigend nach Teilnehmern, um die beliebtesten Reisen zu identifizieren:
+
+```bash
+curl -X POST "https://api.example.org/api/v1/aggregates/departures/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measures": ["participants"],
+    "dimensions": ["trip"],
+    "filters": [
+      {"dimension": "brand", "op": "in", "values": ["twr"]}
+    ],
+    "time_range": {
+      "from": "2031-06-01",
+      "to": "2031-08-31"
+    },
+    "sort": [
+      {"id": "participants", "dir": "desc"}
+    ],
+    "limit": 10
+  }'
+```
+
+<Callout kind="info" collapsed="false">
+  Bei Sortierung nach Measure werden unterdrückte Zeilen (`"<3"`) am Ende der Ergebnismenge platziert, unabhängig von der Sortierrichtung.
+</Callout>
+
+### Werte-Discovery für Dashboard-Filter
+
+Lade zuerst die verfügbaren Länder für einen Zeitraum, um Filter-Dropdowns zu befüllen:
+
+```bash
+curl "https://api.example.org/api/v1/aggregates/departures/values?dimension=destination_country&from=2031-06-01&to=2031-08-31" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Verwende die zurückgegebenen Werte in einer anschliessenden Query als Filter:
+
+```bash
+curl -X POST "https://api.example.org/api/v1/aggregates/departures/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measures": ["departures", "participants"],
+    "dimensions": ["destination_country"],
+    "filters": [
+      {"dimension": "destination_country", "op": "in", "values": ["IT", "GR", "ES"]}
+    ],
+    "time_range": {
+      "from": "2031-06-01",
+      "to": "2031-08-31"
+    }
+  }'
+```
+
+### ETag-Caching-Workflow
+
+Reduziere Datenbanklast durch Conditional Requests:
+
+1. **Erste Abfrage** — speichere den `ETag`-Header aus der Antwort.
+2. **Folgeabfrage** — sende den ETag als `If-None-Match`:
+
+```bash
+curl -X POST "https://api.example.org/api/v1/aggregates/feedback/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H 'If-None-Match: "1f2d..."' \
+  -d '{
+    "measures": ["nps", "avg_rating"],
+    "dimensions": ["month"],
+    "time_range": {"from": "2031-01-01", "to": "2031-12-31"}
+  }'
+```
+
+Wenn sich die Daten nicht geändert haben (gleicher `as_of`-Zeitstempel), antwortet die API mit `304 Not Modified` und überspringt die SQL-Abfrage vollständig.
+
+### Fahrzeugauslastung über ein Jahr
+
+Das Dataset `vehicle_days` erlaubt mit der Dimension `day` bis zu 366 Tage — die einzige Ausnahme von der 92-Tage-Regel:
+
+```bash
+curl -X POST "https://api.example.org/api/v1/aggregates/vehicle_days/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measures": ["vehicle_days", "operating_days", "full_days", "half_days"],
+    "dimensions": ["month", "category"],
+    "time_range": {
+      "from": "2031-01-01",
+      "to": "2031-12-31"
+    },
+    "sort": [
+      {"id": "month", "dir": "asc"}
+    ]
+  }'
+```
+
+### Feedback-NPS-Trend nach Abreisemonat
+
+Verwende `departure_month` anstelle von `month`, um den NPS nach dem Reisemonat statt nach dem Feedback-Eingangsdatum zu gruppieren:
+
+```bash
+curl -X POST "https://api.example.org/api/v1/aggregates/feedback/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measures": ["nps", "nps_responses", "avg_rating"],
+    "dimensions": ["departure_month", "brand"],
+    "time_range": {
+      "from": "2031-01-01",
+      "to": "2031-12-31"
+    }
+  }'
+```
+
+### Buchungen mit Stornierungen einbeziehen
+
+Standardmässig werden stornierte Buchungen ausgeschlossen. Um alle Statuswerte zu sehen, füge die Dimension `status` hinzu oder filtere explizit:
+
+```bash
+curl -X POST "https://api.example.org/api/v1/aggregates/bookings/query" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measures": ["bookings", "pax"],
+    "dimensions": ["status", "month"],
+    "time_range": {
+      "from": "2031-01-01",
+      "to": "2031-12-31"
+    }
+  }'
+```
+
+Ohne `status`-Dimension oder -Filter zählt die API nur nicht stornierte Buchungen.
+
+## Datenbankstrukturen
+
+Die Aggregates API liest nicht direkt aus den Roh-Tabellen, sondern nutzt materialisierte Views und dedizierte Indizes für Performance und Datenisolation.
+
+### Materialisierte Views für Feedback
+
+Die Feedback-Measures basieren auf zwei materialisierten Views, die durch Migration `0066_feedback_survey_scores.sql` erstellt wurden:
+
+```sql
+feedback_analytics.mv_survey_ratings
+feedback_analytics.mv_survey_scores
+```
+
+Diese Views enthalten nur Survey-IDs, Question-IDs, numerische Score-Aggregate und NPS-Werte — keine Freitext-Antworten oder Namen. Die Views werden durch den Feedback-Refresh-Prozess aktualisiert. Die Aktualität der Views wird über den `as_of`-Zeitstempel in der `provenance`-Antwort sichtbar.
+
+Migration `0068_feedback_scores_normalized.sql` stellt sicher, dass:
+
+- qualitative Labels (z.B. "sehr gut") in normalisierte Scores umgewandelt werden
+- numerische Skalen auf 0–10 normalisiert werden
+- Nicht-Bewertungsfragen ausgeschlossen werden
+- der NPS den rohen 0–10-Wert beibehält
+
+### Indizes
+
+Migration `0063_aggregate_indexes.sql` erstellt den Index:
+
+```sql
+CREATE INDEX IF NOT EXISTS ix_dispo_assignments_start_date
+    ON dispo_assignments (start_date);
+```
+
+Dieser Index unterstützt die Bereichsabfragen der Datasets `vehicle_days` und `staff_days`, die Einsätze über mehrere Tenants hinweg nach Startdatum filtern.
+
+### Quelltabellen
+
+Die Dataset-Definitionen in `aggregate_datasets.py` greifen unter anderem auf folgende Tabellen zu:
+
+| Schema               | Tabellen                                                                                                 | Verwendung durch              |
+| -------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `tourdata`           | `trips`, `trip_departure_dates`, `bookings`, `participants`, `tenants`, `countries`, `country_iso_codes` | `departures`, `bookings`      |
+| `tourdata`           | `dispositions`, `dispo_assignments`, `dispo_vehicles`, `dispo_assignment_staff`                          | `vehicle_days`, `staff_days`  |
+| `feedback_analytics` | `survey`, `question`, `mv_survey_ratings`, `mv_survey_scores`                                            | `feedback`, `guide_ratings`   |
+| `dispo`              | `assignment`, `staff`                                                                                    | `staff_days`, `guide_ratings` |
+
+Die API exponiert keine beliebigen Datenbankspalten. Measures und Dimensions sind in Python fest definiert, und alle Request-Werte werden als gebundene SQL-Parameter übergeben — nie als Text in die SQL-Abfrage interpoliert.
+
+## ETags und Caching
+
+Der Query-Endpunkt unterstützt Conditional Requests. Der ETag wird aus folgenden Werten gebildet:
+
+- kanonische Abfrage
+- effektiver Offset
+- Limit
+- Personalmodus
+- `as_of`, also der Zeitpunkt des letzten erfolgreichen Sync-Laufs
+
+Eine erfolgreiche Antwort enthält:
+
+```http
+ETag: "9b8..."
+Cache-Control: private, max-age=3600
+```
+
+Sende den ETag bei einer späteren Anfrage als `If-None-Match`:
+
+```http
+If-None-Match: "9b8..."
+```
+
+Wenn der ETag unverändert ist, antwortet die API mit `304 Not Modified`. Die Aggregat-SQL-Abfrage wird in diesem Fall übersprungen.
+
+Das Values-Endpoint setzt ebenfalls `Cache-Control: private, max-age=3600`, verwendet aber keine ETags.
+
+## Rate Limiting
+
+Die Aggregates API verwendet ein Sliding-Window-Limit von 10 Requests pro fünf Sekunden. Das entspricht ungefähr zwei Requests pro Sekunde mit einem Burst von zehn Requests.
+
+Das Limit wird anhand der Caller- oder Client-ID angewendet, nicht anhand der Endnutzer-IP. Der Zähler ist prozesslokal. Bei mehreren Replikas besitzt jede Replica deshalb einen eigenen Zähler.
+
+Bei Überschreitung antwortet die API mit:
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 1
+```
+
+```json
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Zu viele Anfragen"
+  }
+}
+```
+
+Jede Datenbankoperation läuft in einer schreibgeschützten Transaktion mit einem Statement-Timeout von fünf Sekunden. Bei einem Timeout oder einem operativen Datenbankfehler antwortet die API mit `503 unavailable`.
+
+```json
+{
+  "error": {
+    "code": "unavailable",
+    "message": "Abfrage dauerte zu lange"
+  }
+}
+```
+

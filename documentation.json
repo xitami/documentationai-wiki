@@ -82,6 +82,21 @@
                 "icon": "bar-chart"
               },
               {
+                "title": "Events & Webhooks",
+                "path": "tourdata-mirror/events",
+                "icon": "bell"
+              },
+              {
+                "title": "Alerts & Benachrichtigungen",
+                "path": "tourdata-mirror/alerts",
+                "icon": "circle-alert"
+              },
+              {
+                "title": "MCP Server",
+                "path": "tourdata-mirror/mcp-server",
+                "icon": "cpu"
+              },
+              {
                 "title": "Datenmodelle & Schemata",
                 "path": "tourdata-mirror/data-models",
                 "icon": "database"

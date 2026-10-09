@@ -1,0 +1,304 @@
+---
+title: "Events & Webhooks"
+description: "Nutzen Sie die Event-Pipeline für transaktionale Webhook-Benachrichtigungen und interne Inbox-Zustellung mit Ordering, Retries und HMAC."
+---
+
+## Events und Webhooks
+
+Das Event-Subsystem stellt eine transaktionale Outbox-Pipeline für Webhook-Benachrichtigungen und die interne Inbox-Zustellung bereit. Produzenten schreiben Events zusammen mit der fachlichen Änderung in dieselbe Datenbanktransaktion. Ein geplanter Zustelllauf verteilt die Events anschließend an passende Endpoints.
+
+Die Pipeline garantiert Zustellung mindestens einmal, Per-Entity-Ordering, Wiederholungen und Circuit-Breaker-Schutz.
+
+## Event-Typen
+
+| Typ | Beschreibung | Payload-Felder |
+|---|---|---|
+| `alert.triggered` | Eine Alert-Regel wurde für eine Entität ausgelöst. | `rule_id` (`int`), `metric` (`string`), `threshold` (`number`), `value` (`number`, optional), `sample_size` (`int`, optional) |
+| `alert.cleared` | Ein zuvor ausgelöster Alert ist nicht mehr aktiv. | `rule_id`, `metric`, `threshold` |
+| `trip.changed` | Eine Reise wurde erstellt oder geändert. | `trip_code` (`string`), `change` (`created` oder `updated`) |
+| `booking.changed` | Eine Buchung wurde erstellt oder geändert. | `booking_id`, `trip_code`, `change`, `dsid` (optional) |
+
+Das Wire-Level-Format für den CloudEvents-Typ lautet:
+
+```text
+ch.twgapp.mirror.<topic>.v<version>
+```
+
+Ein Beispiel für `booking.changed` ist `ch.twgapp.mirror.booking.changed.v1`.
+
+## Formate
+
+Endpoints unterstützen CloudEvents-Batches und das trigger-only Format für Excellence.
+
+<CodeGroup tabs="cloudevents-batch,excellence-items">
+
+```json
+[
+  {
+    "specversion": "1.0",
+    "id": "evt_01J8Y6Q3F4K7M2P9N5R1T8V0XZ",
+    "source": "tourdata-mirror",
+    "type": "ch.twgapp.mirror.booking.changed.v1",
+    "subject": "tenant:acme:booking:bk_78421",
+    "time": "2026-10-09T14:32:18Z",
+    "datacontenttype": "application/json",
+    "data": {
+      "booking_id": "bk_78421",
+      "trip_code": "ALP2026",
+      "change": "updated",
+      "dsid": "dsid_483920"
+    },
+    "entitytype": "booking",
+    "severity": "info",
+    "sequence": 1842,
+    "producer": "booking-sync",
+    "tenant": "acme"
+  }
+]
+```
+
+```json
+{
+  "items": [
+    {
+      "type": "trip",
+      "code": "ALP2026"
+    }
+  ]
+}
+```
+
+</CodeGroup>
+
+### CloudEvents-Batch
+
+Das Format `cloudevents-batch` verwendet den Content-Type:
+
+```text
+application/cloudevents-batch+json; charset=utf-8
+```
+
+Jedes Element ist ein CloudEvents-1.0-Objekt. Die Felder `entitytype`, `severity`, `sequence`, `producer` und `tenant` sind Mirror-spezifische Erweiterungen. Die Sequenznummer unterstützt die Reihenfolge innerhalb einer Entity-Lane.
+
+### Excellence-Items
+
+Das Format `excellence-items` verwendet den Content-Type `application/json`. Es enthält ausschließlich Triggerdaten. Excellence ruft die aktuellen Details anschließend über die Read API ab. Events ohne Reisebezug werden aus diesem Format entfernt.
+
+## HMAC-Signierung
+
+Die Standard-Webhooks-v1-Signatur verwendet drei Header:
+
+<ParamField header="webhook-id" param-type="string" required="true">Stabile ID der Nachricht.</ParamField>
+
+<ParamField header="webhook-timestamp" param-type="string" required="true">Unix-Zeitstempel in Sekunden, der für die Gültigkeitsprüfung verwendet wird.</ParamField>
+
+<ParamField header="webhook-signature" param-type="string" required="true">Eine oder mehrere Base64-kodierte HMAC-SHA256-Signaturen mit dem Präfix `v1,`.</ParamField>
+
+Die signierte Eingabe besteht aus:
+
+```text
+{webhook-id}.{webhook-timestamp}.{raw-body}
+```
+
+Berechnen Sie den Digest mit HMAC-SHA256 und kodieren Sie das Ergebnis mit Base64. Der resultierende Wert erhält das Präfix `v1,`. Der Empfänger muss den Timestamp innerhalb einer Toleranz von 300 Sekunden akzeptieren.
+
+Secrets verwenden normalerweise das Format `whsec_<base64>`. Für Legacy-Endpoints wird auch ein UTF-8-Secret akzeptiert. Bei einer Rotation kann zusätzlich das Secret aus `<secret_ref>_PREVIOUS` verwendet werden. In diesem Fall sendet Mirror beide gültigen Signaturen.
+
+<Callout kind="info">
+
+Die Message-ID hat das Format `msg_<sha256-of-sorted-delivery-ids>`. Sie bleibt über alle Retries konstant und eignet sich als Idempotency-Key beim Empfänger.
+
+</Callout>
+
+Als Alternative steht Bearer Authentication für Empfänger zur Verfügung, die HMAC nicht verifizieren können. Das Bearer-Secret wird durch eine separate Host-Umgebungsvariable begrenzt. Dadurch kann ein Endpoint seine Credentials nicht auf einen anderen Host umleiten.
+
+## Outbox und Produktion
+
+Produzenten verwenden `outbox.emit()`. Der Outbox-Eintrag entsteht in derselben Datenbanktransaktion wie die fachliche Änderung. Wird die Transaktion zurückgerollt, verschwindet auch das Event.
+
+<Callout kind="warning">
+
+Personenbezogene Daten sind in Event-Payloads nicht zulässig. Die Outbox weist Felder wie `email`, `phone`, `first_name`, `last_name`, `address`, `birth_date` und `iban` zurück.
+
+</Callout>
+
+Ein optionaler `dedupe_key` verhindert doppelte Events über einen partiellen Unique Index. Bei einem Duplikat liefert die Outbox stillschweigend `None` zurück.
+
+Die aktuellen Produzenten sind:
+
+- **Alert Engine:** Erzeugt `alert.triggered` und `alert.cleared`.
+- **Booking-Synchronisation:** Erzeugt `booking.changed`.
+- **Trip-Synchronisation:** Erzeugt `trip.changed`.
+- **`sync/changes.py`:** Klassifiziert Änderungen als `NEW`, `CHANGED`, `BASELINE` oder `UNCHANGED`. Nur `NEW` und `CHANGED` erzeugen Events.
+
+| Tabelle | Zweck |
+|---|---|
+| `event.outbox` | Event-Einträge mit Topic, Tenant, Entität, Payload und Sequenz |
+| `event.endpoint` | Webhook- und Inbox-Endpoints mit URL, Format und Auth-Modus |
+| `event.subscription` | Topic-Pattern, Tenant-Filter, Severity-Filter und JSON-Payload-Filter |
+| `event.delivery` | Zustellungsaufträge mit Status, Versuchen und Entity-Lane |
+| `event.attempt` | Verlauf der Zustellungsversuche |
+| `event.inbox_item` | Per-Person-Inbox-Einträge mit Read-, Ack- und Snooze-Status |
+
+## Fan-Out und Subscription-Matching
+
+Mirror führt den Fan-Out pro Endpoint aus. Jeder Endpoint verwaltet eine eigene `fanout_seq`. Neue Endpoints starten bei der aktuell höchsten Sequenz und erhalten keine historischen Events.
+
+Ein Event passt zu einer Subscription, wenn alle folgenden Prüfungen erfolgreich sind:
+
+1. **Topic:** Exaktes Topic oder ein abschließendes Wildcard-Pattern wie `alert.*`.
+2. **Tenant:** Der Tenant-Filter stimmt überein. `NULL` bedeutet alle Tenants.
+3. **Payload:** Der JSON-Filter erfüllt die PostgreSQL-Containment-Prüfung `@>`.
+4. **Severity:** Die Event-Severity ist mindestens so hoch wie die konfigurierte Mindest-Severity.
+
+Für jedes passende Endpoint-Event-Paar entsteht genau eine Delivery-Zeile. Die Datenbank verhindert Duplikate mit:
+
+```sql
+ON CONFLICT (event_id, endpoint_id) DO NOTHING
+```
+
+## Zustellung
+
+Events derselben Kombination aus `tenant`, `entity_type` und `entity_key` werden strikt in der Reihenfolge ihrer `entity_lane` zugestellt. Events verschiedener Entitäten können parallel verarbeitet werden.
+
+### Claiming und Batches
+
+Der Zustellworker reserviert wartende Zeilen mit `FOR UPDATE SKIP LOCKED`. Berücksichtigt werden nur Zeilen mit `next_attempt_at <= now()` und ohne frühere offene Delivery in derselben Lane.
+
+Die Batch-Größe kommt aus der Endpoint-Konfiguration. Der Standardwert ist 50, der Maximalwert 500. Ein Batch gilt als eine Einheit:
+
+- Erfolgreich: Alle Events im Batch werden zugestellt.
+- Temporärer Fehler: Der gesamte Batch wird erneut versucht.
+- Permanenter Fehler: Der gesamte Batch erhält den Status `failed`.
+
+Pro Endpoint verarbeitet ein Lauf höchstens 20 Batches.
+
+### Retries und Status
+
+Die Retry-Abstände sind:
+
+```text
+60 Sekunden → 5 Minuten → 30 Minuten → 2 Stunden → 12 Stunden → failed
+```
+
+Ein Endpoint kann nach einem Fehler pausiert oder später wieder aktiviert werden.
+
+<Callout kind="warning">
+
+Mirror schützt Webhook-Ziele gegen SSRF. Endpoints müssen HTTPS verwenden. Der Host muss auf der Allowlist stehen, DNS wird beim Senden aufgelöst, und private, Loopback-, Link-Local- sowie reservierte Adressen werden abgewiesen. Redirects sind nicht erlaubt. Das Zeitlimit pro Request beträgt 10 Sekunden.
+
+</Callout>
+
+<Callout kind="alert">
+
+Nach fünf aufeinanderfolgenden fehlgeschlagenen Batches pausiert der Circuit Breaker den Endpoint für 15 Minuten. Rows, die länger als 15 Minuten im Status `sending` stehen, werden erneut in die Warteschlange gestellt.
+
+</Callout>
+
+## Interne Inbox
+
+Die interne Inbox ist ein Endpoint mit `kind='inbox'`, der auf `alert.*` subscribed ist. Der Delivery-Worker erstellt für jede passende `alert.rule_subscriber`-Person einen `event.inbox_item`.
+
+Stummgeschaltete Subscriber erhalten keinen Inbox-Eintrag. Die Delivery gilt für die zum Zustellzeitpunkt berechtigten Personen trotzdem als erfolgreich.
+
+Inbox-Einträge enthalten:
+
+- `read_at`: Zeitpunkt, zu dem der Eintrag gelesen wurde.
+- `acknowledged_at`: Zeitpunkt der Bestätigung.
+- `snoozed_until`: Zeitpunkt, bis zu dem der Eintrag ausgeblendet bleibt.
+
+Die Inbox ist derzeit alert-orientiert und benötigt `rule_id` in der Payload.
+
+## CLI
+
+| Befehl | Beschreibung |
+|---|---|
+| `tdm-events endpoint add <name> <url> <secret_ref>` | Endpoint erstellen. Unterstützt `--format`, `--auth` und `--batch-size`. |
+| `tdm-events endpoint list` | Endpoints mit Status, Subscriptions und Warteschlange anzeigen. |
+| `tdm-events endpoint pause <name>` | Endpoint pausieren. |
+| `tdm-events endpoint resume <name>` | Endpoint reaktivieren. |
+| `tdm-events subscribe <name> <topic> --tenant <t>` | Subscription erstellen. Unterstützt `--min-severity`, `--filter` und `--all-tenants`. |
+| `tdm-events unsubscribe <id>` | Subscription deaktivieren. |
+| `tdm-events deliver` | Zustellungslauf mit Fan-Out und Delivery starten. Unterstützt optional `--with-retention`. |
+| `tdm-events tail` | Letzte Outbox-Events mit Delivery-Status anzeigen. |
+
+`secret_ref` ist der Name einer Umgebungsvariable, nicht der Secret-Wert. Ein Beispiel ist `EVENTS_SECRET_EXCELLENCE`.
+
+Webhook-Subscriptions müssen ausdrücklich `--tenant` oder `--all-tenants` verwenden. Ohne diese Angabe wird keine Subscription erstellt.
+
+## Event-Katalog
+
+Der Event-Katalog ist über `GET /api/v1/events/catalog` verfügbar und benötigt Entra-Authentifizierung.
+
+### Request
+
+<Request tabs="cURL" show-lines="false">
+
+```bash
+curl --request GET \
+  --url https://mirror.acme.tour/api/v1/events/catalog \
+  --header "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+```
+
+</Request>
+
+### Response
+
+<Response tabs="200,401" show-lines="false">
+
+```json
+{
+  "types": [
+    {
+      "type": "ch.twgapp.mirror.booking.changed.v1",
+      "topic": "booking.changed",
+      "version": 1,
+      "description": "Eine Buchung wurde erstellt oder geändert.",
+      "data_schema": {
+        "type": "object",
+        "required": ["booking_id", "trip_code", "change"]
+      }
+    }
+  ],
+  "formats": [
+    {
+      "format": "cloudevents-batch",
+      "content_type": "application/cloudevents-batch+json; charset=utf-8",
+      "description": "CloudEvents 1.0 als Batch."
+    },
+    {
+      "format": "excellence-items",
+      "content_type": "application/json",
+      "description": "Trigger-Liste für nachgelagertes Abrufen über die Read API."
+    }
+  ],
+  "authentication": {
+    "hmac": {
+      "spec": "Standard Webhooks v1",
+      "headers": [
+        "webhook-id",
+        "webhook-timestamp",
+        "webhook-signature"
+      ],
+      "signed_content": "{webhook-id}.{webhook-timestamp}.{raw-body}",
+      "algorithm": "HMAC-SHA256",
+      "tolerance": 300
+    },
+    "bearer": {
+      "headers": ["Authorization"]
+    }
+  }
+}
+```
+
+```json
+{
+  "detail": "Authentifizierung erforderlich"
+}
+```
+
+</Response>
+
+Die Antwort enthält die verfügbaren Event-Typen mit Topic, Version, Beschreibung und `data_schema`. Der Abschnitt `formats` beschreibt Content-Type und Semantik der unterstützten Endpoint-Formate. Unter `authentication` sind die Header und Signaturparameter für HMAC sowie die Header für Bearer Authentication aufgeführt.
+
+Der Katalog ist die einzige API zum Nachschlagen von Event-Metadaten. Mirror stellt keine API zum Erstellen oder Konsumieren von Events bereit. Die Event-Administration erfolgt über `tdm-events`.
