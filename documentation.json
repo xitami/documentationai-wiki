@@ -77,6 +77,11 @@
                 "icon": "terminal"
               },
               {
+                "title": "Aggregates API",
+                "path": "tourdata-mirror/aggregates-api",
+                "icon": "bar-chart"
+              },
+              {
                 "title": "Datenmodelle & Schemata",
                 "path": "tourdata-mirror/data-models",
                 "icon": "database"
