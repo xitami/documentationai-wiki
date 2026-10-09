@@ -4,6 +4,12 @@
     "title": "TourData Mirror Read-API",
     "version": "0.1.0"
   },
+  "servers": [
+    {
+      "url": "https://ca-twg-tdmirror-dev-readapi.proudpebble-06225363.switzerlandnorth.azurecontainerapps.io",
+      "description": "Dev Read API (Azure Container Apps)"
+    }
+  ],
   "paths": {
     "/health": {
       "get": {
