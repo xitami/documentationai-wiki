@@ -124,7 +124,7 @@ Die aktuellen Produzenten sind:
 - **Alert Engine:** Erzeugt `alert.triggered` und `alert.cleared`.
 - **Booking-Synchronisation:** Erzeugt `booking.changed`.
 - **Trip-Synchronisation:** Erzeugt `trip.changed`.
-- **`sync/changes.py`****:** Klassifiziert Änderungen als `NEW`, `CHANGED`, `BASELINE` oder `UNCHANGED`. Nur `NEW` und `CHANGED` erzeugen Events.
+- **`sync/changes.py`:** Klassifiziert Änderungen als `NEW`, `CHANGED`, `BASELINE` oder `UNCHANGED`. Nur `NEW` und `CHANGED` erzeugen Events.
 
 | Tabelle              | Zweck                                                                 |
 | -------------------- | --------------------------------------------------------------------- |
@@ -155,6 +155,10 @@ ON CONFLICT (event_id, endpoint_id) DO NOTHING
 ## Zustellung
 
 Events derselben Kombination aus `tenant`, `entity_type` und `entity_key` werden strikt in der Reihenfolge ihrer `entity_lane` zugestellt. Events verschiedener Entitäten können parallel verarbeitet werden.
+
+<Callout kind="info" collapsed="false">
+  Der Event-Delivery-Worker ist Teil des geplanten `mail_deliver`-Jobs und noch kein separater Service.
+</Callout>
 
 ### Claiming und Batches
 
@@ -233,7 +237,7 @@ Der Event-Katalog ist über `GET /api/v1/events/catalog` verfügbar und benötig
 
 ### Response
 
-<Response default-tab="0" show-lines="true">
+<Response show-lines="true">
   ```json
   {
     "types": [

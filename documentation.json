@@ -87,7 +87,10 @@
               {
                 "title": "Events & Webhooks",
                 "path": "tourdata-mirror/events",
-                "icon": "bell"
+                "icon": "bell",
+                "openapi": "api-reference/openapi.json GET /api/v1/alerts/rules",
+                "openapi-mode": "auto",
+                "method": "GET"
               },
               {
                 "title": "Alerts & Benachrichtigungen",

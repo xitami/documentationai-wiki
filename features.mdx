@@ -1,122 +1,131 @@
 ---
-title: Core Features
-description: Discover the core features of TWG that enable efficient organization and management of project documentation.
+title: Features
+description: Explore TWG platform capabilities for synchronized TourData, analytics, planning, documents, alerts, events, aggregates, and read-only LLM access.
 ---
 
-## Overview
+## TWG platform capabilities
 
-TWG provides powerful tools to organize, collaborate on, and maintain your project documentation. You can structure content hierarchically, work with teams in real time, track changes, search efficiently, and apply professional templates. These features streamline your workflow from initial setup to ongoing updates.
+The TWG platform provides data mirroring, analytics, disposition planning, document management, alerting, event delivery, and LLM-accessible read APIs. Each capability is backed by a dedicated schema and exposed through the FastAPI application or scheduled jobs.
 
 <Columns cols={3}>
-  <Card title="Document Hierarchy" icon="folder" href="#document-hierarchy">
-    Organize content into nested folders and pages for intuitive navigation.
+  <Card title="TourData Mirroring" icon="database" href="tourdata-mirror/overview">
+
+  Mirror trips, bookings, customers, services, persons, and invoices from TourData APIs.
+
   </Card>
-  <Card title="Real-time Collaboration" icon="users" href="#real-time-collaboration">
-    Edit documents simultaneously with your team.
+
+  <Card title="Feedback Analytics" icon="bar-chart" href="tourdata-mirror/aggregates-api">
+
+  Ingest surveys, calculate NPS and recommendation scores, and enrich feedback with sentiment analysis.
+
   </Card>
-  <Card title="Version History" icon="git-branch" href="#version-history">
-    Review and restore previous versions easily.
+
+  <Card title="Disposition Planning" icon="users" href="tourdata-mirror/overview">
+
+  Manage staff, assignments, planning runs, proposals, decision logs, and staff portal workflows.
+
   </Card>
-  <Card title="Search and Filtering" icon="search" href="#search-filtering">
-    Find content quickly with advanced search tools.
+
+  <Card title="Velo-Log Application" icon="settings" href="tourdata-mirror/data-models">
+
+  Store trip status, bus and trailer assignments, trip metadata, and print state for Velo-Log.
+
   </Card>
-  <Card title="Templates" icon="file-text" href="#templates-formatting">
-    Start with pre-built templates and rich formatting.
+
+  <Card title="kd-doc Customer Documents" icon="folder" href="tourdata-mirror/data-models">
+
+  Manage content-addressed assets, public capability-token links, document data, and workspace notes.
+
+  </Card>
+
+  <Card title="Alerts Engine" icon="alert-triangle" href="tourdata-mirror/alerts">
+
+  Define metrics and threshold rules, track triggers, and deliver alerts through configured channels.
+
+  </Card>
+
+  <Card title="Events Pipeline" icon="zap" href="tourdata-mirror/events">
+
+  Publish CloudEvents with HMAC signing, ordered webhook delivery, retries, and internal inbox support.
+
+  </Card>
+
+  <Card title="Aggregates API" icon="bar-chart" href="tourdata-mirror/aggregates-api">
+
+  Query self-describing BI datasets through self-description, query, and values endpoints.
+
+  </Card>
+
+  <Card title="MCP Server" icon="terminal" href="tourdata-mirror/mcp-server">
+
+  Give LLM clients read-only access to trips, bookings, feedback, aggregates, alerts, and reference data.
+
+  </Card>
+
+  <Card title="Mail Service" icon="shield" href="tourdata-mirror/architecture">
+
+  Submit mail through Microsoft Graph with sender authorization, retries, idempotency, and PII redaction.
+
+  </Card>
+
+  <Card title="Multi-Tenant Support" icon="cloud" href="tourdata-mirror/architecture">
+
+  Isolate credentials, synchronization runs, and domain data for each configured tenant.
+
   </Card>
 </Columns>
 
-## Document Hierarchy and Folders
+## Feature Matrix
 
-Create a clear structure for your documentation using nested folders. You define a root workspace, add subfolders for categories like guides or APIs, and nest pages within them. This mirrors your project's architecture.
+| Feature | Primary schema | Access mode |
+|---|---|---|
+| TourData Mirroring | `tourdata` | Read via API / Write via sync |
+| Feedback Analytics | `feedback_analytics` | Read via API / Write via ingest jobs |
+| Disposition Planning | `dispo` | Read + Write via API |
+| Velo-Log | `velo_log` | Read + Write via API, gated |
+| kd-doc | `kd_store` | Read + Write via API, gated |
+| Alerts | `alert` | Read + Write via API and job |
+| Events | `event` | Read catalog / Write via sync and job |
+| Aggregates API | Read models | Read-only |
+| MCP Server | All domains | Read-only |
+| Mail | `mail` | Write on submit + Read for status |
 
-```mermaid
-graph TD
-    A[Workspace Root] --> B[Guides]
-    A --> C[API Reference]
-    B --> D[Quickstart]
-    B --> E[Best Practices]
-    C --> F[Endpoints]
-    C --> G[Authentication]
-```
+<Callout kind="info">
 
-<Callout kind="tip">
-  Use descriptive folder names and limit nesting to three levels for optimal navigation.
+Source-owned data in `tourdata` is refreshed by ingestion and remains read-only for applications. Application-owned schemas, including `dispo`, `velo_log`, `kd_store`, `mail`, `alert`, and `event`, support writes through their respective API boundaries.
+
 </Callout>
 
-## Real-time Collaboration
+## Multi-Tenant Architecture
 
-Invite team members to co-edit documents live. Changes appear instantly, with cursors showing who is editing what. Resolve conflicts automatically or discuss via integrated comments.
+TWG keeps each tenant isolated across credentials, synchronization runs, and domain data. Configured tenants include `twr`, `imb`, `rmt`, `voe`, and `exc`.
 
-<Tabs>
-  <Tab title="Invite Collaborators" icon="user-plus">
-    Share a document link or add emails directly. Set permissions: view, edit, or admin.
-  </Tab>
-  <Tab title="Live Editing" icon="edit-3">
-    See real-time updates and use `@mentions` for notifications.
-  </Tab>
-</Tabs>
+Tenant identity is part of the data model. A trip is identified by `(tenant_id, trip_code)`, so the same trip code may exist in more than one tenant without creating a collision.
 
-## Version History
+<Callout kind="tip">
 
-Every edit creates a new version. You access the full history, compare changes, and revert if needed. Branching allows experimental edits without affecting the main document.
+Always include the tenant when querying or storing trip-related data. Trip codes are not globally unique across the platform.
 
-<Steps>
-  <Step title="View History" icon="clock">
-    Click the history icon in the toolbar to open the version panel.
-  </Step>
-  <Step title="Compare Versions" icon="git-compare">
-    Select two versions to see a side-by-side diff.
-  </Step>
-  <Step title="Restore Version" icon="refresh-cw">
-    Choose a version and click restore to apply it.
-  </Step>
-</Steps>
+</Callout>
 
-## Search and Filtering
+## Write Protection
 
-Search across all documents with full-text indexing. Filter by tags, authors, or dates. Advanced operators like `tag:api` or `author:john` refine results.
+The platform gates selected write paths with explicit configuration flags. Keep these flags disabled unless the corresponding application boundary is ready to write data.
 
-| Filter Type | Example Query | Result |
-|-------------|---------------|--------|
-| Tags       | `tag:feature` | Pages tagged "feature" |
-| Authors    | `author:alice`| Content by Alice |
-| Date Range | `date:>2024-01-01` | Recent updates |
+<ParamField body="VELO_WRITE_ENABLED" param-type="boolean" show-location="false">
+  Enables writes for the Velo-Log API and its `velo_log` data.
+</ParamField>
 
-## Templates and Formatting
+<ParamField body="KD_DOC_WRITE_ENABLED" param-type="boolean" show-location="false">
+  Enables writes for the kd-doc API and its `kd_store` data.
+</ParamField>
 
-Start new pages from templates like API docs or changelogs. Rich formatting includes headings, code blocks, tables, and embeds.
+<ParamField body="READ_API_AGGREGATES_PERSONAL" param-type="boolean" show-location="false">
+  Enables personal-related aggregate datasets, including `guide_ratings` and the person dimension in `staff_days`.
+</ParamField>
 
-<CodeGroup tabs="Markdown,Rich Text">
-  ```markdown
-  ## Heading
+<Callout kind="alert">
 
-  - List item
-  - Another item
+Production startup fails closed when the Microsoft Entra tenant or API audience configuration is missing. Configure Entra authentication before enabling production API access.
 
-  `Inline code`
-  ```
-
-  ```html
-  <h2>Heading</h2>
-  <ul>
-    <li>List item</li>
-    <li>Another item</li>
-  </ul>
-  <code>Inline code</code>
-  ```
-</CodeGroup>
-
-<Expandable title="Advanced Formatting Options" default-open="false">
-  Embed images, videos, or custom components. Use `{variable}` syntax for dynamic content in templates.
-
-  ```javascript
-  const config = {
-    theme: 'dark',
-    features: ['collaboration', 'search']
-  };
-  ```
-</Expandable>
-
-<Callout kind="success">
-  Explore templates in the dashboard to accelerate your setup.
 </Callout>

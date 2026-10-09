@@ -1,97 +1,228 @@
 ---
-title: "Architektur & Komponenten"
-description: "Detailed top-level architecture of the TourData Mirror service, including FastAPI, sync engine, database layer, MCP server, CLI tools, and Azure Functions nightly sync."
+title: Architektur & Komponenten
+description: Verstehen Sie die Systemarchitektur, Synchronisationsjobs, Datenbankgrenzen und den vollständigen Datenfluss des TourData Mirror.
 ---
 
 ## Architektur-Übersicht
 
-The TourData Mirror is built as a Python/FastAPI application with a clear separation between upstream data ingestion, local storage, and read APIs. The primary runtime is `src/tourdata_mirror/api/main.py`, which mounts all business routers under `/api/v1` with health probes at `/health` and `/ready`.
+Der TourData Mirror synchronisiert TourData-Stamm- und Buchungsdaten nach Azure PostgreSQL und stellt sie über eine geschützte FastAPI-Anwendung, MCP-Tools und direkte BI-Zugriffe bereit. Die FastAPI-Anwendung liegt unter `src/tourdata_mirror/api/main.py`, bindet alle Fachrouter unter `/api/v1` ein und stellt die Health-Endpunkte `/health` und `/ready` bereit.
+
+`/health` dient als Liveness-Prüfung. `/ready` prüft die Datenbankverbindung mit `SELECT 1`. In Produktionsumgebungen validiert die Anwendung Entra-JWTs und startet fail-closed, wenn die erforderliche Entra-Konfiguration fehlt. CORS ist auf die konfigurierten Browser- und SPA-Ursprünge beschränkt.
+
+Die Autorisierung ist nach Routergruppen organisiert. Zu den Caller-Policy-Gruppen gehören `catalog`, `operations`, `feedback`, `aggregates` und `platform`. Dadurch können Anwendungen je nach Domäne unterschiedliche Zugriffsrechte erhalten, ohne dass jeder Router eigene Autorisierungsregeln implementieren muss.
 
 ```mermaid
 graph TD
-    A[Web Trip API] --> E[tourdata_client.py]
-    B[Dossier API] --> E
-    C[Disposition API v2] --> E
-    D[Address API] --> E
-
-    E --> F[sync/ modules]
-    F --> G[Azure PostgreSQL]
-    G --> H[db.py connection pool]
-
-    G --> I[FastAPI api/main.py]
-    I --> J[/api/v1]
-    I --> K[Consuming applications]
-
-    G --> L[MCP server mcp/]
-    M[CLI tools cli/] --> F
-    N[Nightly Azure Function functions/nightly_sync] --> F
-
-    K --> K1[BI]
-    K --> K2[Feedback analytics]
-    K --> K3[Velo-log]
-    K --> K4[Dispo]
-    K --> K5[kd-doc]
-    K --> K6[Notes]
-    K --> K7[Mail]
-    K --> K8[Alerts]
-    K --> K9[Events]
+    A[TourData APIs] --> B[Python Clients]
+    B --> C[Sync Modules]
+    C --> D[tourdata schema]
+    C --> E[_sync metadata]
+    C --> F[event.outbox]
+    D --> G[Post-processing and read models]
+    E --> G
+    G --> H[FastAPI /api/v1]
+    G --> I[MCP tools]
+    G --> J[BI and direct PostgreSQL access]
+    G --> K[Application boundaries]
+    K --> K1[Velo-log]
+    K --> K2[kd-doc]
+    K --> K3[Mail]
+    K --> K4[Alerts]
+    F --> L[event.delivery]
+    L --> M[Signed webhooks]
+    L --> N[Inbox channels]
+    L --> O[Microsoft Graph mail]
 ```
 
-The upstream APIs remain external systems. `tourdata_client.py` handles their HTTP authentication, retries, pagination, and client-specific requests. Synchronization modules transform those responses into local PostgreSQL records using initial backfills and incremental ingestion.
+Die Synchronisation und die Request-Verarbeitung sind getrennte Laufzeitpfade. Hintergrundjobs lesen die externen APIs und aktualisieren die lokale Datenbasis, während FastAPI, MCP und BI auf der lokalen PostgreSQL-Repräsentation arbeiten.
 
-FastAPI and the MCP server consume the local database representation rather than querying the upstream systems for every request. CLI tools and the nightly Azure Function invoke the same synchronization modules, which keeps operational and scheduled ingestion paths aligned.
+## Schema-Grenzen
 
-## Komponenten
+Die Datenbank trennt Quelldaten, lokale Betriebsdaten, Synchronisationsmetadaten und abgeleitete Lesemodelle. Diese Trennung verhindert, dass ein erneuter Import lokale Entscheidungen oder Anwendungszustände überschreibt.
 
-| Area | Location | Responsibility |
-|---|---|---|
-| API application | `src/tourdata_mirror/api/` | FastAPI app, authentication, routers, pagination, and rate limits |
-| TourData integration | `src/tourdata_mirror/tourdata_client.py` | HTTP authentication, retries, pagination, and upstream API calls |
-| Synchronization | `src/tourdata_mirror/sync/` | Upsert and incremental ingestion logic |
-| Database | `src/tourdata_mirror/db.py` | Connection pool and single database connections |
-| Configuration | `src/tourdata_mirror/config.py` | Environment settings, tenant credentials, and feature switches |
-| Feedback processing | `feedback_enrichment.py`, `feedback_sentiment.py` | LLM sentiment analysis, themes, and recommendations |
-| Alerts | `src/tourdata_mirror/alerts/` | Metrics, rules, packs, evaluation, and UI support |
-| Mail | `src/tourdata_mirror/mail/` | Queue, templates, transport, and delivery |
-| Events | `src/tourdata_mirror/events/` | Event formats, signing, inbox and outbox persistence, and delivery |
-| MCP | `src/tourdata_mirror/mcp/` | Local and remote LLM integration |
-| CLI | `src/tourdata_mirror/cli/` | Backfills, migrations, ingestion, exports, analysis, and operations |
-| Infrastructure | `infra/terraform/`, `Dockerfile`, `.github/workflows/` | Azure deployment and CI/CD |
-| Schema | `db/migrations/`, `docs/schema/mirror-schema.sql` | Database schema and migrations |
-
-### Runtime boundaries
-
-The API application is the primary runtime boundary. `api/main.py` mounts business routers under `/api/v1`, while `/health` provides a liveness probe and `/ready` verifies database readiness with a database query.
-
-The synchronization boundary is separate from the request-serving boundary. Modules under `sync/` manage trip, booking, customer, survey, personnel, and disposition ingestion. They track synchronization runs, cursors, statuses, record counts, timestamps, and errors in the `_sync` schema.
-
-Configuration is centralized in `config.py`. It resolves environment settings, tenant-specific TourData credentials, authentication settings, and domain-specific feature flags used by the API and background operations.
-
-## Datenbank/API-Trennung
+| Kategorie | Schemas oder Objekte | Verantwortung |
+| --- | --- | --- |
+| Source-owned Mirror | `tourdata` | Von TourData abgeleitete Daten. Die Ingestion darf Datensätze ersetzen oder aktualisieren. Planungs- und anwendungseigener Zustand gehört nicht in dieses Schema. |
+| Application-owned operational | `dispo`, `velo_log`, `kd_store`, `mail`, `alert`, `event`, `workspace` | Lokale Betriebsdaten, Planungsentscheidungen, Dokumente, Notizen, Mail- und Alert-Historie sowie Event-Zustände. Diese Daten werden nicht durch die Ingestion überschrieben. |
+| Synchronisationsmetadaten | `_sync` | Cursor, Synchronisationsläufe, Stream-Liveness und Mutation- beziehungsweise Hash-Informationen. |
+| Read models | Materialized Views, Aggregate, Feedback-Views, Disposition-Planning-Views | Für API, BI, Assistenten und operative Auswertungen optimierte Lesemodelle. |
 
 <Callout kind="info">
 
-Upstream systems are remote and relatively slow. The mirror stores a local, queryable PostgreSQL representation so applications can use consistent FastAPI endpoints instead of connecting directly to the database or calling TourData APIs themselves.
+TourData-eigene Spiegeldaten können aktualisiert oder vollständig ersetzt werden. Lokale operative Entscheidungen, Dokumentänderungen, Velo-Log-Zustände, Alert-Historie, Mail-Protokolle und Event-Zustellungen bleiben dagegen in getrennten Schemas und werden durch die Ingestion nicht überschrieben.
 
 </Callout>
 
-The database layer in `db.py` manages the PostgreSQL connection pool and individual connections. FastAPI routers use this layer to serve local data with pagination, read-only transactions, query timeouts, access policies, and domain-specific response models.
+Die wichtigste Grenze liegt zwischen `tourdata.dispo_*` und dem Schema `dispo`: `tourdata.dispo_*` enthält die austauschbare Rohspiegelung der Disposition-API. `dispo` enthält die lokale Planungswahrheit mit Anforderungen, Vorschlägen, Zuordnungen und Entscheidungsprotokollen.
 
-This separation gives consuming applications a stable API boundary. It also allows synchronization to continue independently of read traffic and lets the service expose derived data, including feedback aggregates, booking views, disposition data, alerts, and planning information.
+## TourData-Clients
 
-## Nightly Azure Function
+Die Clients kapseln Anmeldung, Tokenverwaltung, Wiederholungen und API-spezifische Requests. Jeder Client meldet sich per Bearer-Token an und unterstützt Retry- und Re-Login-Verhalten sowie HTTP-Transport-Re­tries.
 
-The timer-triggered Azure Function at `functions/nightly_sync/__init__.py` runs daily at 02:00 UTC. It resolves credentials and runs synchronization independently for each configured tenant.
+| Client | Zuständigkeit und wichtige Endpunkte |
+| --- | --- |
+| `WebTripClient` | Tourkatalog und Tourdetails über `/trips` und `/trip/{code}`. |
+| `DossierClient` | Buchungen über `/Dossier/search` sowie Umfragen über `/Survey`. |
+| `DispositionClient` | Dispositionssuche und -details über `/v2/disposition/search` und `/v2/disposition/{id}`. |
+| `AddressClient` | Reisepersonal und vollständige Kundenadressen über `/Reisepersonal` und `/Addresses/full`. |
 
-For each tenant, the function:
+Web Trip und Dossier sind getrennte externe APIs und verwenden getrennte Zugangsdaten. Die Zuordnung von Zugangsdaten und Mandanten erfolgt pro Tenant. Ein Fehler oder abgelaufener Token eines Tenants darf die Verarbeitung anderer Tenants nicht beeinträchtigen.
 
-- Resolves tenant-specific Web Trip and Dossier credentials.
-- Opens the corresponding TourData clients.
-- Synchronizes trips.
-- Synchronizes bookings.
-- Logs the result for that tenant.
-- Skips tenants without the required credentials instead of aborting the entire run.
+## Sync-Module
 
-The function treats trip and booking synchronization independently because a tenant may have Dossier access without Web Trip access. The run fails visibly when no tenant successfully imports bookings, which prevents an apparently successful schedule from hiding a complete ingestion failure.
+Die Synchronisationslogik liegt unter `src/tourdata_mirror/sync/`. Die Module arbeiten tenantbezogen und verwenden je nach Quelle Cursor, Zeitfenster oder Hashes.
 
-The same synchronization modules are also available through CLI commands such as `tdm-backfill`, `tdm-ingest`, and `tdm-enrich`. This keeps scheduled operations, manual backfills, and local maintenance workflows on the same ingestion implementation.
+| Modul | Verantwortung |
+| --- | --- |
+| `trips.py` | Synchronisiert den Web-Trip-Katalog und die Tourdetails. |
+| `trips_soon.py` | Aktualisiert in kurzen Intervallen bevorstehende und aktive Touren. |
+| `bookings.py` | Synchronisiert Buchungen und Dossier-Daten. |
+| `customers.py` | Synchronisiert Kunden-, Adress- und Clubdaten. |
+| `surveys.py` | Importiert Feedback- und Umfragedaten aus Dossier. |
+| `dispositions.py` | Importiert Rohdaten aus der Disposition-API. |
+| `dispo_trips.py` | Verknüpft geplante Touren mit Dispositionen. |
+| `dispo_staff.py` | Synchronisiert Personal- und Dispositionszuordnungen. |
+| `persons.py` | Synchronisiert Personen- und Reisepersonalbezüge. |
+| `reisepersonal.py` | Importiert Personalinformationen aus der Address-API. |
+| `changes.py` | Erkennt Mutationen über Hashes und erzeugt bei echten Änderungen Events. |
+| `state.py` | Führt Cursor, Runs, Status, Zähler und weitere Synchronisationsmetadaten. |
+
+Alle Pfade folgen grundsätzlich dem Muster: lesen, kanonisieren und hashen, nur bei einer Mutation schreiben. Backfills können die Event-Erzeugung unterdrücken, um Event-Stürme bei historischen Importen zu vermeiden.
+
+## Mutation-Klassifizierung
+
+`sync/changes.py` klassifiziert jeden gelesenen Datensatz anhand seines bisherigen Zustands und seines kanonischen Payload-Hashes. Dadurch lassen sich echte Änderungen von wiederholten, unveränderten API-Antworten unterscheiden.
+
+| Status | Bedeutung |
+| --- | --- |
+| `NEW` | Erstmals erkannter Datensatz. |
+| `BASELINE` | Erste Schreibung oder Wechsel der Hash-Version. Der Datensatz erhält eine Vergleichsbasis, gilt aber nicht als fachliche Änderung für die Event-Erzeugung. |
+| `CHANGED` | Der kanonische Payload hat sich gegenüber dem gespeicherten Hash geändert. |
+| `UNCHANGED` | Der Payload ist identisch. Es erfolgt keine fachliche Schreibaktion. |
+
+Nur `NEW` und `CHANGED` können Events erzeugen. `BASELINE` und `UNCHANGED` erzeugen keine Events. Bei Backfills kann die Event-Erzeugung unabhängig von der Klassifizierung unterdrückt werden.
+
+Die Mutation und der zugehörige `event.outbox`-Eintrag werden in derselben Datenbanktransaktion geschrieben. Ein Rollback entfernt damit sowohl die fachliche Änderung als auch das Event.
+
+## Azure Container Apps Jobs
+
+Azure Container Apps Jobs bilden die primäre Scheduling-Infrastruktur für wiederkehrende und getrennte Verarbeitungspfade. Jeder Job besitzt eine eigene Ausführungsgrenze, damit Fehler in einem Bereich nicht automatisch andere Pipelines stoppen.
+
+| Job | Aufgabe | Schedule oder Trigger |
+| --- | --- | --- |
+| `feedback_ingest` | Inkrementeller Dossier-Umfrageimport, Sentiment- und Themenanalyse sowie Aktualisierung der Materialized Views. | Zeitgesteuert, inkrementell |
+| `trips_backfill` | Vollständiger beziehungsweise umfangreicher Web-Trip-Katalog-Backfill. | Wöchentlich |
+| `trips_soon` | Aktualisiert bevorstehende und aktive Touren. | Ungefähr alle 30 Minuten |
+| `ingest_imb` | Umfrageimport, Analyse und Aktualisierung der Views für Imbach. | Tenant-spezifisch, zeitgesteuert |
+| `ingest_rmt` | Umfrageimport, Analyse, View-Aktualisierung und aus Umfragen abgeleitete Touren für RMT. | Tenant-spezifisch, zeitgesteuert |
+| `ingest_exc` | Optionale Umfrage- und Tourenverarbeitung für Excellence. | Optional, zeitgesteuert |
+| `ingest_voe` | Umfrageimport, Analyse, View-Aktualisierung und aus Umfragen abgeleitete Touren für VOE. | Tenant-spezifisch, zeitgesteuert |
+| `dispo` | Importiert Reisepersonal und anschließend Dispositionen aus einem rollierenden Zeitfenster. | Zeitgesteuert |
+| `bookings` | Führt einen nächtlichen, mandantenübergreifenden Dossier-Deltasynchronisationslauf aus. | Nächtlich |
+| `customers` | Synchronisiert Kundenadressen und Clubdaten nach der Buchungssynchronisation. | Nachgelagert zu `bookings` |
+| `analyze` | Führt eine manuelle Sentiment- und Themenanalyse aus. | Manuell |
+| `migrate` | Führt Datenbankmigrationen aus. | Manuell |
+| `mail_deliver` | Verarbeitet Mail-Retries und Retention, evaluiert Alerts und übernimmt Event-Fan-out sowie Zustellung. | Zeitgesteuert |
+
+Die Container-Apps-Umgebung verwendet externes HTTPS-Ingress für die API, Azure Container Registry, eine User-assigned Managed Identity, Azure Key Vault, Log Analytics und Application Insights. Die Jobs laufen in Consumption-Workload-Profilen.
+
+`mail_deliver` enthält derzeit auch den Event-Zustellungsworker. Die Event-Zustellung ist daher logisch getrennt, aber noch kein eigener Service.
+
+## Azure Function
+
+Die Azure Function `functions/nightly_sync/__init__.py` läuft timer-gesteuert täglich ungefähr um 02:00 UTC. Sie liest die konfigurierten Tenants aus `TOURDATA_TENANTS`, löst die jeweiligen Web-Trip- und Dossier-Zugangsdaten auf und verwendet dieselben Synchronisationsmodule wie die übrigen Betriebswege.
+
+Die Verarbeitung ist pro Tenant isoliert:
+
+- Die Trip- und Buchungssynchronisation laufen unabhängig voneinander.
+- Ein fehlerhafter Tenant stoppt die Verarbeitung der übrigen Tenants nicht.
+- Fehlen Zugangsdaten für eine Verarbeitung, wird der betroffene Pfad übersprungen.
+- Die Function schlägt insgesamt nur fehl, wenn kein Tenant eine Buchungssynchronisation erfolgreich abschließen konnte.
+
+Die Function läuft als Azure Linux Function mit Python 3.12, VNet-Integration, Managed Identity, Key Vault-Referenzen, Application Insights und privater Datenbankverbindung.
+
+## Admin-Interfaces
+
+Die FastAPI-Anwendung stellt zusätzlich statische administrative und diagnostische Oberflächen bereit.
+
+| Endpoint | Zweck |
+| --- | --- |
+| `/admin` | Administrative Oberfläche für Betriebs- und Verwaltungsfunktionen. |
+| `/debug` | Diagnose- und Debugging-Oberfläche. |
+| `/schema-viewer` | Anzeige von Schema- und Kataloginformationen. |
+| `/ai-admin` | Verwaltung und Prüfung der AI-Konfiguration. |
+| `/mail-admin` | Verwaltung und Diagnose des Mail-Systems. |
+| `/alerts-admin` | Verwaltung und Prüfung von Alert-Regeln und Auslösungen. |
+
+Diese Oberflächen ergänzen die API. Sie ersetzen weder die Authentifizierung noch die Caller-Policies der geschützten API-Routen.
+
+## Datenfluss
+
+Die vollständige Verarbeitungskette beginnt bei den externen TourData-APIs und endet bei API-, BI-, MCP- und Zustellungsintegrationen.
+
+```mermaid
+graph LR
+    A[TourData APIs] --> B[Python Clients]
+    B --> C[Sync Modules]
+    C --> D[tourdata schema]
+    C --> E[_sync metadata]
+    C --> F[event.outbox]
+    D --> G[Post-processing]
+    E --> G
+    G --> G1[Feedback views]
+    G --> G2[Aggregates]
+    G --> G3[Disposition planning views]
+    G --> H[FastAPI /api/v1]
+    G --> I[MCP tools]
+    G --> J[BI and direct PostgreSQL]
+    G --> K[Velo kd-doc mail alert]
+    F --> L[event.delivery]
+    K --> M[mail.message]
+    L --> N[Signed webhooks]
+    L --> O[Inbox channels]
+    M --> P[Microsoft Graph mail]
+```
+
+Die Clients übernehmen Bearer-Login, Token-Erneuerung und Transport-Re­tries. Die Sync-Module verarbeiten die Daten tenantbezogen und schreiben die Quelldaten in `tourdata`, den Lauf- und Cursorzustand in `_sync` sowie echte Mutationen in `event.outbox`.
+
+Nachgelagerte Verarbeitung aktualisiert Feedback-Views, Materialized Views, Aggregate und Dispositions-Planungsmodelle. FastAPI und MCP lesen diese lokalen Modelle. BI-Systeme können die API oder, für dafür vorgesehene Anwendungsfälle, PostgreSQL direkt verwenden.
+
+Events werden vom Zustellungsworker über `event.delivery` an abonnierte Endpunkte verteilt. Je nach Endpoint entstehen signierte Webhooks, Inbox-Einträge oder Mail-Nachrichten über Microsoft Graph.
+
+## Komponenten
+
+| Bereich | Ort | Verantwortung |
+| --- | --- | --- |
+| API-Anwendung | `src/tourdata_mirror/api/` | FastAPI-Anwendung, Authentifizierung, Router, Pagination und Rate Limits |
+| TourData-Integration | `src/tourdata_mirror/tourdata_client.py` | HTTP-Authentifizierung, Retries, Pagination und Upstream-API-Aufrufe |
+| Synchronisation | `src/tourdata_mirror/sync/` | Upserts, Cursorverarbeitung, Mutationserkennung und inkrementelle Ingestion |
+| Datenbank | `src/tourdata_mirror/db.py` | Connection Pool und einzelne Datenbankverbindungen |
+| Konfiguration | `src/tourdata_mirror/config.py` | Umgebungsvariablen, Tenant-Zugangsdaten und Feature-Schalter |
+| Feedback-Verarbeitung | `feedback_enrichment.py`, `feedback_sentiment.py` | LLM-basierte Sentimentanalyse, Themen und Empfehlungen |
+| Alerts | `src/tourdata_mirror/alerts/` | Metriken, Regeln, Regelpakete, Auswertung und UI-Unterstützung |
+| Mail | `src/tourdata_mirror/mail/` | Queue, Templates, Transport und Zustellung |
+| Events | `src/tourdata_mirror/events/` | Event-Formate, Signierung, Inbox- und Outbox-Persistenz sowie Zustellung |
+| MCP | `src/tourdata_mirror/mcp/` | Lokale und entfernte LLM-Integration |
+| CLI | `src/tourdata_mirror/cli/` | Backfills, Migrationen, Ingestion, Exporte, Analysen und Betriebsaufgaben |
+| Infrastruktur | `infra/terraform/`, `Dockerfile`, `.github/workflows/` | Azure-Bereitstellung und CI/CD |
+| Schema | `db/migrations/`, `docs/schema/mirror-schema.sql` | Datenbankschema und Migrationen |
+
+<Callout kind="info">
+
+Die Datenbank ist die lokale Integrations- und Persistenzschicht, nicht die öffentliche Anwendungsgrenze. Externe Anwendungen wie Velo-Log und kd-doc greifen über `/api/v1` auf ihre Daten zu und verbinden sich nicht direkt mit der privaten PostgreSQL-Datenbank. Dadurch bleiben Authentifizierung, Caller-Policies, Pagination und Domänenregeln zentral in FastAPI.
+
+</Callout>
+
+Die Trennung erlaubt es, Synchronisation unabhängig vom Leseverkehr auszuführen. Gleichzeitig können die API und die Read Models abgeleitete Daten wie Feedback-Aggregate, Buchungsansichten, Dispositionen, Alerts und Planungsinformationen bereitstellen.
+
+## Tenants
+
+Die konfigurierte Tenant-Landschaft umfasst typischerweise:
+
+- `twr`
+- `imb`
+- `rmt`
+- `voe`
+- `exc`
+
+Jeder Tenant besitzt eine eigene Zuordnung zu TourData-Mandant, Login-Werten und Zugangsdaten. Web Trip und Dossier verwenden dabei getrennte Credentials. Die Synchronisationsjobs verarbeiten Tenants unabhängig voneinander, damit ein Fehler in einem Tenant weder die Daten anderer Tenants überschreibt noch deren Verarbeitung verhindert.
