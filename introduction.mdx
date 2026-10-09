@@ -1,42 +1,80 @@
 ---
 title: Introduction to TWG
-description: Landing page with an overview of TWG, its key features for managing project documentation, and quick navigation to get started.
+description: >-
+  Get started with the TWG platform — a TourData mirror with Read API, MCP
+  server, analytics, alerts, events, and multi-tenant synchronization across all
+  TWG brands.
 ---
-
-<Image src="https://blob-cdn.documentation.ai/org-2ebb2ef5-dd91-493f-9938-283fbdb14c81/doc-d2a73d2e-4391-4446-a5c8-2d0b41b7c4c1/1774416332529-4tjutjn9snw-Image-2.png?q=85&fm=auto&auto=compress%2Cformat" alt="TWG documentation" width="800" height="400" />
+<Image src="https://blob-cdn.documentation.ai/org-2ebb2ef5-dd91-493f-9938-283fbdb14c81/doc-d2a73d2e-4391-4446-a5c8-2d0b41b7c4c1/1774416332529-4tjutjn9snw-Image-2.png?q=85&fm=auto&auto=compress%2Cformat" width="800" height="400" alt="TWG documentation" />
 
 ## Welcome to TWG
 
-TWG provides your default documentation space to organize and manage project documentation efficiently. Reisen in guter Gesellschaft – bester Preis-/Leistung.
+The TWG platform mirrors master and operational data from TourData into Azure PostgreSQL and exposes it through an authenticated Read API with Microsoft Entra SSO. It powers nightly incremental sync, BI direct access, feedback analytics, disposition planning, customer document delivery, alerting, and event-driven webhooks, all behind a multi-tenant architecture serving the Twerenbold, Imbach, RMT, Vögele, and Excellence brands.
 
-## Key Features
+## What You Can Do
 
-<Columns cols={2}>
-  <Card title="Centralized Documentation" icon="book-open" href="/quickstart">
-    Organize all your travel project docs, from busreisen to flussreisen, in one intuitive hub.
+<Columns cols="3">
+  <Card title="Explore the Mirror" href="tourdata-mirror/overview" icon="database" horizontal="false">
+    Understand the data flow from TourData APIs through sync jobs into PostgreSQL, and how the Read API and MCP server expose it.
   </Card>
-  <Card title="Easy Navigation" icon="menu" href="#">
-    Quick access to reiseziele, rund ums reisen, and specialized sections like preise & rabatte.
+
+  <Card title="Platform Features" href="features" icon="layers" horizontal="false">
+    Browse the full feature matrix: mirroring, analytics, disposition, alerts, events, aggregates, mail, and MCP.
   </Card>
-  <Card title="Rich Content Tools" icon="edit-3" href="#">
-    Use visual components to create engaging pages for tagesausflüge, themenreisen, and more.
+
+  <Card title="Get Started" href="quickstart" icon="zap" horizontal="false">
+    Clone the repository, run migrations, backfill data, and start the Read API and MCP server locally.
   </Card>
-  <Card title="Customizable Workspace" icon="settings" href="#">
-    Tailor your space for gruppenreisen, excellence clubreisen, or any project needs.
+
+  <Card title="API Reference" href="tourdata-mirror/api-endpoints" icon="code" horizontal="false">
+    Explore all Read API endpoints under /api/v1, including trips, bookings, feedback, aggregates, dispo, and more.
+  </Card>
+
+  <Card title="Configuration" href="tourdata-mirror/configuration" icon="settings" horizontal="false">
+    Every environment variable: database, upstream APIs, tenants, Entra, LLMs, feature flags, mail, and events.
+  </Card>
+
+  <Card title="Changelog" href="changelog" icon="git-branch" horizontal="false">
+    Track releases across all TWG repositories: TourData Mirror, kd-doc, and the Fullstack Starter.
   </Card>
 </Columns>
 
-## Explore TWG
+## Architecture at a Glance
 
-<Columns cols={2}>
-  <Card title="Quickstart" icon="zap" href="/quickstart" horizontal>
-    Get up and running with your first documentation project in minutes.
-  </Card>
-  <Card title="Authentication" icon="shield" href="/authentication" horizontal>
-    Secure access to manage and collaborate on sensitive travel documentation.
-  </Card>
-</Columns>
+The platform runs on Azure with private-by-default infrastructure: PostgreSQL Flex integrated into a VNet, Container Apps for the Read API and sync jobs, Key Vault for secrets, and Application Insights for observability. Data is ingested from four TourData upstream APIs: Web Trip, Dossier, Disposition v2, and Address, and stored in domain-specific PostgreSQL schemas.
 
-<Callout kind="tip">
-  This documentation was generated as a starter kit. Customize the content to match your product.
+<Callout kind="info" collapsed="false">
+  Source-owned data in the `tourdata` schema is refreshed by ingestion and remains read-only. Application-owned schemas, including `dispo`, `velo_log`, `kd_store`, `mail`, `alert`, and `event`, support writes through their respective API boundaries, gated by feature flags.
 </Callout>
+
+## Multi-Tenant
+
+Each brand is a separate tenant with isolated credentials, sync runs, and domain data. Tenants include `twr` (Twerenbold), `imb` (Imbach), `rmt` (RMT), `voe` (Vögele), and `exc` (Excellence). A trip is identified by `(tenant_id, trip_code)`, so the same trip code can exist across tenants without collision.
+
+## Environments
+
+The platform has two environments: `dev` and `prod`. There is no `test` environment. Infrastructure defaults differ materially between them: replica counts, mail gates, event transport, alert sender, and model settings. See the [configuration page](tourdata-mirror/configuration) for the full variable reference.
+
+<Callout kind="tip" collapsed="false">
+  Always validate migrations and sync changes against `dev` before tagging a production release. TourData Mirror has no test environment.
+</Callout>
+
+## Next Steps
+
+<Columns cols="2">
+  <Card title="Quickstart" href="quickstart" icon="zap" horizontal="false">
+    Set up the mirror locally in under 10 minutes.
+  </Card>
+
+  <Card title="Core Concepts" href="features" icon="book-open" horizontal="false">
+    Understand the platform's capabilities and schema boundaries.
+  </Card>
+
+  <Card title="Architecture" href="tourdata-mirror/architecture" icon="git-branch" horizontal="false">
+    Dive into the component structure and deployment topology.
+  </Card>
+
+  <Card title="Data Models" href="tourdata-mirror/data-models" icon="database" horizontal="false">
+    Explore the PostgreSQL schemas and table relationships.
+  </Card>
+</Columns>

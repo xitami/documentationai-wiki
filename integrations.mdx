@@ -1,234 +1,195 @@
 ---
 title: Integrations
-description: Understand how TWG connects TourData, Entra ID, Azure, mail, LLM, MCP, and downstream systems across its integration landscape.
+description: >-
+  Connect TWG with your favorite tools and services to streamline your
+  documentation workflow.
 ---
+## Overview
 
-## Integration landscape
+TWG supports seamless integrations with popular tools to enhance your documentation workflow. Sync changes with version control, export content in various formats, embed pages in your sites, set up webhooks for real-time updates, and use third-party authentication providers.
 
-TWG integrates with TourData APIs, Microsoft Entra ID, Azure infrastructure, LLM providers, and external webhook systems. These integrations form the upstream data pipeline, authentication layer, cloud infrastructure, and downstream notification channels.
-
-## TourData APIs
-
-TourData provides the source data that TWG mirrors into Azure PostgreSQL. Each API uses bearer-token authentication after login, with transport retries and retry-triggered re-login behavior.
-
-<Columns cols={2}>
-  <Card title="Web Trip API" href="#tourdata-apis" icon="cloud" horizontal="false">
-
-  Provides the trip catalogue and trip details through `/Login`, `/trips`, and `/trip/{code}`.
-
+<Columns cols="3">
+  <Card title="Version Control" href="#version-control" icon="git-branch" horizontal="false">
+    Sync your docs with GitHub or GitLab repositories.
   </Card>
 
-  <Card title="Dossier API" href="#tourdata-apis" icon="database" horizontal="false">
-
-  Provides bookings, dossiers, and survey data through `/Login`, `/Survey`, survey reference endpoints, and dossier search and detail endpoints.
-
+  <Card title="Exports" href="#exports" icon="download" horizontal="false">
+    Generate PDF or Markdown files from your documentation.
   </Card>
 
-  <Card title="Disposition API" href="#tourdata-apis" icon="settings" horizontal="false">
-
-  Provides vehicle, staffing, and transport-planning data through the versioned disposition search and detail endpoints.
-
+  <Card title="Webhooks" href="#webhooks" icon="zap" horizontal="false">
+    Receive notifications on content updates.
   </Card>
 
-  <Card title="Address API" href="#tourdata-apis" icon="users" horizontal="false">
+  <Card title="Embedding" href="#embedding" icon="code" horizontal="false">
+    Embed TWG pages in your websites or apps.
+  </Card>
 
-  Provides Reisepersonal and full customer address data through `/Reisepersonal` and `/Addresses/full/{pamandant}/{paid}`.
-
+  <Card title="Auth Providers" href="#auth-providers" icon="shield" horizontal="false">
+    Integrate with OAuth providers like Google or GitHub.
   </Card>
 </Columns>
 
-The Web Trip and Dossier APIs are separate upstream systems. Configure separate credentials for each API, even when both credentials belong to the same tenant.
+## Version Control Sync
 
-Configured tenants include:
+Connect TWG to GitHub for automatic syncing of your documentation. Push changes to your repo, and TWG pulls updates in real-time.
 
-- `twr`
-- `imb`
-- `rmt`
-- `voe`
-- `exc`
+<Steps>
+  <Step title="Create Repository" icon="repo" title-type="p">
+    Set up a new GitHub repository for your docs.
+  </Step>
 
-<Callout kind="info">
+  <Step title="Connect TWG" icon="link" title-type="p">
+    In TWG settings, enter your repo URL: `https://github.com/your-org/your-docs`.
+  </Step>
 
-TWG isolates credentials and source configuration per tenant. A failure in one tenant does not normally prevent other tenants from completing their synchronization runs.
+  <Step title="Configure Webhook" icon="settings" title-type="p">
+    Add a GitHub webhook pointing to your TWG sync endpoint.
+  </Step>
 
+  <Step title="Sync Changes" icon="git-commit" title-type="p">
+    Push commits to trigger automatic updates.
+  </Step>
+</Steps>
+
+<Callout kind="tip" collapsed="false">
+  Enable branch protection in GitHub to ensure only approved changes sync to TWG.
 </Callout>
 
-The main upstream services are:
+## Export Options
 
-| API | Production service | Primary data |
-| --- | --- | --- |
-| Web Trip API | `ase-travelapi-prod.azurewebsites.net` | Trip catalogue and trip details |
-| Dossier API | `ase-dossier-prod.azurewebsites.net` | Bookings, dossiers, surveys, questions, and choices |
-| Disposition API | `ase-disposition-prod.azurewebsites.net` | Vehicles, staffing, dispositions, and transport planning |
-| Address API | `ase-address-prod.azurewebsites.net` | Reisepersonal and customer addresses |
+Export your TWG documentation to PDF or Markdown for sharing or archiving.
 
-## Microsoft Entra ID
+<Tabs>
+  <Tab title="PDF" icon="file-text">
+    Use the export API to generate PDFs.
 
-Microsoft Entra ID protects normal API routes with JWT validation and supplies the caller identity used for authorization decisions. The service also uses Entra ID for remote MCP authentication and mail sender authorization.
+    <CodeGroup show-lines="true">
+      ```bash
+      curl -X POST https://api.example.com/v1/docs/export/pdf \
+        -H "Authorization: Bearer YOUR_API_KEY" \
+        -d '{"docId": "your-doc-id"}'
+      ```
 
-Configure the tenant and expected API audience with these settings:
+      ```javascript
+      const response = await fetch('https://api.example.com/v1/docs/export/pdf', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer YOUR_API_KEY',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ docId: 'your-doc-id' })
+      });
+      const pdfUrl = await response.json();
+      ```
+    </CodeGroup>
+  </Tab>
 
-<ParamField body="ENTRA_TENANT_ID" param-type="string" required="true" show-location="false">
-  Microsoft Entra tenant identifier used to validate incoming tokens.
+  <Tab title="Markdown" icon="markdown">
+    Export as clean Markdown files.
+
+    <CodeGroup show-lines="true">
+      ```bash
+      curl -X POST https://api.example.com/v1/docs/export/md \
+        -H "Authorization: Bearer YOUR_API_KEY"
+      ```
+
+      ```python
+      import requests
+      response = requests.post(
+          'https://api.example.com/v1/docs/export/md',
+          headers={'Authorization': 'Bearer YOUR_API_KEY'}
+      )
+      markdown = response.text
+      ```
+    </CodeGroup>
+  </Tab>
+</Tabs>
+
+## Embedding TWG Pages
+
+Embed interactive TWG documentation in your website using an iframe.
+
+```html
+<iframe
+  src="https://docs.example.com/embed/your-doc-id"
+  width="100%"
+  height="600"
+  frameborder="0">
+</iframe>
+```
+
+Customize with query params like `?theme=dark&readOnly=true`.
+
+## Webhooks for Updates
+
+Set up webhooks to notify external services when your docs change.
+
+<Request show-lines="true">
+  ```javascript
+  // Payload sent to your webhook URL
+  await fetch('https://your-webhook-url.com/twgdocs', {
+    method: 'POST',
+    body: JSON.stringify({
+      event: 'doc.updated',
+      docId: 'abc123',
+      version: '1.2.3',
+      timestamp: '2024-01-15T10:30:00Z'
+    })
+  });
+  ```
+</Request>
+
+<Response show-lines="true">
+  ```json
+  {
+    "status": "received",
+    "event": "doc.updated"
+  }
+  ```
+
+  ```json
+  {
+    "error": "Invalid signature"
+  }
+  ```
+</Response>
+
+<ParamField header="X-TWG-Signature" param-type="string" required="true" deprecated="false" show-location="true">
+  HMAC SHA-256 signature of the payload using your webhook secret.
 </ParamField>
 
-<ParamField body="ENTRA_API_AUDIENCE" param-type="string" required="true" show-location="false">
-  Expected audience value for API access tokens.
-</ParamField>
+## Third-party Auth Providers
 
-Caller-policy groups apply authorization rules by integration purpose:
+Integrate OAuth providers for user authentication.
 
-- `catalog`: Trip catalogue and related read access.
-- `operations`: Operational and synchronization data.
-- `feedback`: Surveys, ratings, and feedback enrichment.
-- `aggregates`: Aggregate and read-model access.
-- `platform`: Platform, administration, and integration operations.
+<Expandable title="Google OAuth Setup" default-open="true">
+  1. Register your app in Google Cloud Console.
+  2. Add client ID and secret to TWG settings.
+  3. Redirect users to `https://api.example.com/auth/google`.
+</Expandable>
 
-Entra application claims, including the client ID or `azp` claim, identify the calling application. Mail permissions use application-specific sender authorization in addition to token validation.
+<Expandable title="GitHub OAuth" default-open="false">
+  Configure scopes: `user:email, repo`.
+</Expandable>
 
-<Callout kind="alert">
+<Board uid="cd458ab0-464c-4720-9b04-84c9f92e3f4a" title="Integration Status">
+  <BoardColumn title="Live" uid="fece9b3b-ce44-473a-be7c-f32a0b84cbb8" color="2" icon="check-circle">
+    <BoardCard title="GitHub Sync" uid="b0a65346-b604-4bd6-b453-d35caf22f2ef" description="Full two-way sync" icon="git-branch" />
 
-Production startup fails closed when `ENTRA_TENANT_ID` or `ENTRA_API_AUDIENCE` is missing. Configure both values before deploying the API or any protected integration.
+    <BoardCard title="PDF Export" uid="6e7fddea-dc34-45af-b84b-b2f4635c2421" description="On-demand generation" icon="file-text" />
+  </BoardColumn>
 
+  <BoardColumn title="Beta" uid="67b55b11-0dc5-447f-891c-eb2507a55e4b" color="1" icon="loader">
+    <BoardCard title="Slack Notifications" uid="5bfd5d40-f036-4d60-bd35-50926aeb8cd2" description="Real-time alerts" icon="message-circle" />
+  </BoardColumn>
+
+  <BoardColumn title="Planned" uid="7b111522-cff0-4b10-a0b4-c00e2f13adc2" color="0" icon="circle">
+    <BoardCard title="Notion Import" uid="4ac9ff6b-e69f-4960-992c-d9ef5dd570ea" icon="notion" due-date="2025-03-01" />
+  </BoardColumn>
+</Board>
+
+<Callout kind="info" collapsed="false">
+  Check the TWG dashboard for the latest integration status and setup guides.
 </Callout>
 
-## Azure infrastructure
-
-TWG runs its ingestion, API, delivery, and deployment workloads on Azure. Terraform definitions for the infrastructure are stored under `infra/terraform/`.
-
-| Azure service | Integration role |
-| --- | --- |
-| Azure Container Apps | Runs the API and scheduled jobs for synchronization, feedback ingestion, mail delivery, alert evaluation, and event fan-out. |
-| Azure Functions | Runs the `nightly_sync` timer trigger at approximately 02:00 UTC. |
-| Azure Database for PostgreSQL | Stores the multi-schema mirror and application data, including `tourdata`, `_sync`, `dispo`, `velo_log`, `kd_store`, `mail`, `alert`, `event`, and `feedback_analytics`. |
-| Azure Key Vault | Stores secrets and supplies configuration through Key Vault references. Event endpoints store a `secret_ref` instead of the signing secret itself. |
-| Azure Container Registry | Stores container images used by the API, jobs, and deployment workflows. |
-| Azure Virtual Network | Provides network isolation and private connectivity to the database. |
-| Log Analytics | Centralizes logs from Azure-hosted workloads. |
-| Application Insights | Collects application telemetry and execution diagnostics. |
-| Managed Identity | Lets Azure workloads access supported resources without storing credentials in application configuration. |
-| GitHub Actions OIDC | Authenticates deployment workflows to Azure without long-lived deployment credentials. |
-
-The nightly Function reads all configured tenants, obtains tenant-specific Web Trip and Dossier credentials, and synchronizes trips and bookings. Container Apps jobs handle independent workloads such as frequent imminent-trip synchronization, feedback ingestion, disposition ingestion, customer synchronization, and event delivery.
-
-## Microsoft Graph and mail
-
-TWG's production mail service uses Microsoft Graph with a Shared Mailbox. Sender access is controlled per application through the `mail.sender` and `mail.app_sender` records.
-
-The mail flow is durable:
-
-1. TWG renders and stores the complete message in the mail outbox.
-2. A scheduled delivery job claims queued messages.
-3. Microsoft Graph receives the delivery request.
-4. The job records the attempt and retries eligible failures.
-5. Retention processing redacts PII and later removes records according to the configured policy.
-
-The mail service keeps message and attempt state separately. This allows operators to inspect delivery history without losing the original application-level message record.
-
-## LLM providers
-
-TWG uses OpenAI-compatible provider interfaces for feedback sentiment analysis, topic extraction, and trip recommendations.
-
-OpenRouter is the default provider endpoint:
-
-```text
-https://openrouter.ai/api/v1
-```
-
-Anthropic is available through its OpenAI-compatible endpoint as a fallback:
-
-```text
-https://api.anthropic.com/v1/
-```
-
-Configure provider access and model selection with these settings:
-
-<ParamField body="OPENROUTER_API_KEY" param-type="string" required="false" show-location="false">
-  API key for the default OpenRouter provider.
-</ParamField>
-
-<ParamField body="ANTHROPIC_API_KEY" param-type="string" required="false" show-location="false">
-  API key for the Anthropic provider.
-</ParamField>
-
-<ParamField body="ANTHROPIC_MODEL" param-type="string" required="false" show-location="false">
-  Anthropic model used for general enrichment tasks.
-</ParamField>
-
-<ParamField body="ANTHROPIC_MODEL_SENTIMENT" param-type="string" required="false" show-location="false">
-  Anthropic model used for sentiment analysis.
-</ParamField>
-
-The feedback pipeline stores provider-derived sentiment and topic results alongside survey analytics. Provider configuration belongs in deployment secrets rather than in source-controlled configuration.
-
-## MCP and LLM clients
-
-TWG exposes read-only access for LLM clients through several MCP deployment modes:
-
-- **Local stdio server:** Runs locally for tools that launch the MCP process directly.
-- **HTTP server:** Exposes MCP over HTTP for clients that connect to a running service.
-- **Remote MCP deployment:** Provides a remotely hosted MCP endpoint with Entra ID authentication.
-
-The available read-only tool domains include:
-
-- Trips
-- Bookings
-- Feedback
-- Aggregates
-- Alerts
-- Dispositions
-- Notes
-- Mail
-- Reference data
-- Schema metadata
-- Directory and person data
-
-Remote MCP clients authenticate through Microsoft Entra ID and are subject to the same caller-policy boundaries as other protected API consumers. MCP tools access the mirror through the API rather than writing directly to the database.
-
-## Excellence webhook integration
-
-TWG supports a dedicated `excellence-items` webhook format for Excellence integrations. The webhook sends changed trip codes as lightweight triggers:
-
-```json
-{
-  "items": [
-    {
-      "type": "trip",
-      "code": "TRIP-2048"
-    }
-  ]
-}
-```
-
-The payload intentionally contains identifiers instead of a full trip record. Excellence uses each changed trip code to retrieve the complete trip state through its own integration path.
-
-## BI direct database access
-
-BI consumers can connect directly to the mirror PostgreSQL database when they need database-level access to source data or read models. Aggregate APIs and materialized views provide stable read models for dashboards, assistants, and operational reporting.
-
-<Callout kind="info">
-
-Use read-only database access for BI consumers. Keep application writes behind the TWG API or the owning application boundary so source mirror data and local operational state remain separated.
-
-</Callout>
-
-The database separates source-owned mirror data from application-owned data. Ingestion can refresh the `tourdata` schema without overwriting planning, Velo-Log, document, mail, alert, or event-delivery state.
-
-## Velo-Log and kd-doc application boundaries
-
-Velo-Log and kd-doc are external application consumers of TWG's API. Neither application connects directly to PostgreSQL.
-
-- **Velo-Log:** Uses endpoints under `/api/v1/velo/*` and stores application-owned data in the `velo_log` schema.
-- **kd-doc:** Uses endpoints under `/api/v1/kddoc/*` and stores document and workspace data in the `kd_store` schema.
-
-Write access is independently gated:
-
-<ParamField body="VELO_WRITE_ENABLED" param-type="boolean" required="false" show-location="false">
-  Enables Velo-Log write operations when set according to the deployment configuration.
-</ParamField>
-
-<ParamField body="KD_DOC_WRITE_ENABLED" param-type="boolean" required="false" show-location="false">
-  Enables kd-doc write operations when set according to the deployment configuration.
-</ParamField>
-
-This boundary prevents external applications from coupling their persistence logic to the mirror database schema. API consumers receive controlled access to the data and operations relevant to their application.

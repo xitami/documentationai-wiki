@@ -79,18 +79,12 @@
               {
                 "title": "Aggregates API",
                 "path": "tourdata-mirror/aggregates-api",
-                "icon": "bar-chart",
-                "openapi": "api-reference/openapi.json GET /api/v1/aggregates",
-                "openapi-mode": "auto",
-                "method": "GET"
+                "icon": "bar-chart"
               },
               {
                 "title": "Events & Webhooks",
                 "path": "tourdata-mirror/events",
-                "icon": "bell",
-                "openapi": "api-reference/openapi.json GET /api/v1/alerts/rules",
-                "openapi-mode": "auto",
-                "method": "GET"
+                "icon": "bell"
               },
               {
                 "title": "Alerts & Benachrichtigungen",

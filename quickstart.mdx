@@ -1,144 +1,166 @@
 ---
 title: Quickstart
 description: >-
-  Get up and running with TWG by creating an account and setting up your first
-  documentation space in under 5 minutes.
+  Set up the TourData Mirror locally — clone, install dependencies, run
+  migrations, backfill data, and start the Read API and MCP server in under 10
+  minutes.
 ---
 ## Prerequisites
 
-Before starting, ensure you have:
+Before starting, ensure you have the following installed:
 
-- A modern web browser (Chrome, Firefox, Safari, or Edge)
-- An email address for account verification
-- Optional: A GitHub account for version control integration
+- Python 3.12 or later
+- Docker (for local PostgreSQL)
+- Git
+- TourData API credentials (Dossier and Web Trip username/password for at least one tenant)
 
 <Callout kind="info" collapsed="false">
-  No credit card or payment required for the free tier. Upgrade later for advanced features.
+  No Azure subscription is needed for local development. The mirror runs entirely against a local PostgreSQL instance.
 </Callout>
 
-## Create Your Account
-
-Follow these steps to sign up and access your TWG dashboard.
+## Set Up the Project
 
 <Steps>
-  <Step title="Visit TWG" icon="globe" title-type="p">
-    Navigate to `https://app.twg.com` and click **Sign Up**.
+  <Step title="Clone the repository" icon="github" title-type="p">
+    Clone the TourData Mirror repository to your local machine.
+
+    ```bash
+    git clone https://github.com/twerenbold-group/twg-tourdata-mirror.git
+    cd twg-tourdata-mirror
+    ```
   </Step>
 
-  <Step title="Enter Details" icon="user" title-type="p">
-    Provide your email, create a password, and accept the terms.
+  <Step title="Create a virtual environment" icon="package" title-type="p">
+    Set up a Python 3.12 virtual environment and install the package with development dependencies.
+
+    ```bash
+    python3.12 -m venv .venv
+    source .venv/bin/activate
+    pip install -e ".[dev]"
+    ```
   </Step>
 
-  <Step title="Verify Email" icon="mail" title-type="p">
-    Check your inbox for the verification link and click it to activate your account.
+  <Step title="Start a local PostgreSQL" icon="database" title-type="p">
+    The mirror uses PostgreSQL 16. Start a local instance via Docker. Port 5433 avoids conflicts with other projects.
+
+    ```bash
+    docker run --name tdm-pg \
+      -e POSTGRES_USER=tdm \
+      -e POSTGRES_PASSWORD=tdm \
+      -e POSTGRES_DB=tourdata_mirror \
+      -p 5433:5432 \
+      -d postgres:16
+    ```
   </Step>
 
-  <Step title="Access Dashboard" icon="dashboard" title-type="p">
-    Log in to reach your personal dashboard.
-  </Step>
-</Steps>
+  <Step title="Configure environment" icon="settings" title-type="p">
+    Copy the example environment file and fill in your TourData API credentials and database URL.
 
-## Set Up Your First Documentation Space
-
-Once logged in, create a space for your project docs.
-
-<Steps>
-  <Step title="Create Space" icon="plus" title-type="p">
-    Click **New Space** and name it (e.g., "My Project Docs").
-  </Step>
-
-  <Step title="Configure Basics" icon="settings" title-type="p">
-    Add a description like "Documentation for TWG travel projects" and set visibility to public or private.
-  </Step>
-
-  <Step title="Add Navigation" icon="menu" title-type="p">
-    Create pages: Home, Quickstart, API.
-  </Step>
-</Steps>
-
-## Add and Organize Documents
-
-Populate your space with content.
-
-<Tabs>
-  <Tab title="Markdown Editor" icon="edit-3">
-    Use the built-in editor.
-
-    ```markdown
-    # Welcome to TWG Docs
-
-    ## Overview
-
-    Reisen in guter Gesellschaft – bester Preis-/Leistung.
-
-    - Busreisen
-    - Flug & Bus
-    - Musikreisen
+    ```bash
+    cp .env.example .env
     ```
 
-    Preview changes in real-time.
-  </Tab>
+    Open `.env` and set at minimum:
 
-  <Tab title="Import from GitHub" icon="github">
-    Connect your repo.
+    - `DATABASE_URL`: Your local PostgreSQL connection string
+    - `TOURDATA_TENANTS`: Comma-separated tenant identifiers, such as `twr`
+    - `TOURDATA_<TENANT>_DOSSIER_USERNAME` and `TOURDATA_<TENANT>_DOSSIER_PASSWORD`: Your TourData credentials
+    - `TOURDATA_<TENANT>_WEBTRIP_USERNAME` and `TOURDATA_<TENANT>_WEBTRIP_PASSWORD`: Your Web Trip credentials
 
-    <CodeGroup show-lines="true">
-      ```bash
-      twg import --repo owner/my-docs --space "My Project Docs"
-      ```
-
-      ```bash
-      # Or via GitHub app
-      npx twg-github-app install
-      ```
-    </CodeGroup>
-  </Tab>
-</Tabs>
-
-## Preview and Publish
-
-Test and go live.
-
-<Steps>
-  <Step title="Preview" icon="eye" title-type="p">
-    Click **Preview** to see your site as visitors will.
-  </Step>
-
-  <Step title="Publish" icon="upload-cloud" title-type="p">
-    Hit **Publish** to deploy. Share the URL: `https://docs.twg.com/your-space`.
+    <Callout kind="alert" collapsed="false">
+      For local development, Entra authentication can be left unconfigured. The Read API runs with a debug stub that accepts any bearer token. Production requires a valid `ENTRA_TENANT_ID` and `ENTRA_API_AUDIENCE`.
+    </Callout>
   </Step>
 </Steps>
 
+## Apply Migrations
+
+Run the migration CLI to create all database schemas: `tourdata`, `dispo`, `velo_log`, `kd_store`, `mail`, `alert`, `event`, and `feedback_analytics`.
+
+```bash
+tdm-migrate up
+```
+
+## Backfill Data
+
+Run an initial backfill to populate the mirror with data from TourData. Start with trips, then bookings. Each command fetches from the upstream API and upserts into PostgreSQL.
+
+```bash
+tdm-backfill trips
+tdm-backfill bookings
+```
+
 <Callout kind="tip" collapsed="false">
-  Changes auto-save. Use version history for rollbacks.
+  Backfills are resumable and idempotent. If a run is interrupted, re-running the command picks up where it left off using ASC cursor tracking.
 </Callout>
+
+## Start the Read API
+
+Launch the FastAPI Read API locally with hot reload. The API is available at `http://localhost:8000` with a debug UI at `/debug`.
+
+```bash
+uvicorn tourdata_mirror.api.main:app --reload
+```
+
+Verify the API is running:
+
+```bash
+curl http://localhost:8000/health
+# {"status":"ok"}
+
+curl http://localhost:8000/ready
+# {"status":"ready","database":"ok"}
+```
+
+## Start the MCP Server
+
+The MCP server gives LLM clients, including Claude Code and Claude Desktop, read-only access to the mirror's 20+ tools for trips, bookings, feedback, aggregates, alerts, and reference data.
+
+```bash
+pip install -e ".[mcp]"
+tdm-mcp
+```
+
+This starts a stdio MCP server. See the [MCP Server documentation](tourdata-mirror/mcp-server) for client configuration and the full tool list.
+
+## Run Tests and Lint
+
+Before committing, run the full test suite and linter:
+
+```bash
+ruff check . && ruff format --check . && pytest
+```
 
 ## Next Steps
 
-Explore more features.
+Now that the mirror is running locally, explore the platform:
 
 <Columns cols="2">
-  <Card title="Organize Content" href="/introduction" icon="layers" horizontal="false">
-    Learn advanced page management and navigation.
+  <Card title="Platform Overview" href="tourdata-mirror/overview" icon="database" horizontal="false">
+    Understand the full data flow and component architecture.
   </Card>
 
-  <Card title="Customize Theme" href="/configuration" icon="palette" horizontal="false">
-    Apply your brand colors like `#009553` and add logos.
+  <Card title="API Endpoints" href="tourdata-mirror/api-endpoints" icon="code" horizontal="false">
+    Browse all Read API endpoints under `/api/v1`.
   </Card>
 
-  <Card title="Integrations" href="/authentication" icon="plug" horizontal="false">
-    Connect GitHub, Slack, or custom webhooks.
+  <Card title="Configuration" href="tourdata-mirror/configuration" icon="settings" horizontal="false">
+    Every environment variable explained.
   </Card>
 
-  <Card title="Collaboration" href="/guides" icon="users" horizontal="false">
-    Invite team members and set permissions.
+  <Card title="Changelog" href="changelog" icon="git-branch" horizontal="false">
+    Track releases and breaking changes.
+  </Card>
+
+  <Card title="Architecture" href="tourdata-mirror/architecture" icon="git-branch" horizontal="false">
+    Component structure and deployment topology.
+  </Card>
+
+  <Card title="Features" href="features" icon="layers" horizontal="false">
+    Full feature matrix and schema boundaries.
   </Card>
 </Columns>
 
-<Expandable title="Troubleshooting Common Issues" default-open="false">
-  - **Email not received?** Check spam folder.
-  - **Preview blank?** Ensure Markdown is valid.
-  - **Publish fails?** Verify space permissions.
-</Expandable>
-
-You're now ready to document your TWG projects! For travel docs, start with pages for "Busreisen" and "Reiseziele".
+<Callout kind="tip" collapsed="false">
+  The platform has only `dev` and `prod` environments. There is no `test` environment. Always validate schema migrations and sync changes against `dev` before tagging a production release.
+</Callout>
