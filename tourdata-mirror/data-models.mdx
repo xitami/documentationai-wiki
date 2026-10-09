@@ -1,201 +1,352 @@
 ---
-title: "Datenmodelle & Schemata"
-description: "Database schemas in TourData Mirror, including tourdata, feedback_analytics, dispo, velo_log, kd_store, workspace, mail, alert, events, AI, and _sync."
+title: Datenmodelle & Schemata
+description: Referenz der PostgreSQL-Schemata im TourData Mirror mit Tabellen, Schlüsseln, Synchronisationsmetadaten und Eigentumsgrenzen.
 ---
 
-## Schema overview
+## Schemaübersicht
 
-The TourData Mirror stores data across multiple PostgreSQL schemas, each serving a distinct operational or analytical purpose. The core `tourdata` schema holds mirrored master data, while derived schemas support feedback analytics, disposition planning, customer documents, and operational services.
+Der TourData Mirror trennt seine PostgreSQL-Daten in vier Verantwortungsbereiche: Das source-owned Mirror im Schema `tourdata` bildet TourData-Daten ab. Application-owned Schemas wie `dispo`, `velo_log`, `kd_store`, `mail`, `alert`, `event` und `workspace` enthalten lokale Betriebs- und Planungsdaten. Das Schema `_sync` verwaltet Synchronisationszustand und Liveness. Materialized Views, Aggregate und Feedback-Views stellen abgeleitete Read Models für BI, APIs und operative Anwendungen bereit.
 
-<Callout kind="info">
+<Callout kind="info" collapsed="false">
 
-`tourdata` contains operational master and booking data mirrored from TourData. `feedback_analytics` contains analytical support objects and feedback-derived data. The raw disposition mirror in `tourdata.dispo_*` is separate from the `dispo` schema, which stores the organization's own planning and assignment data.
+Die Grenze zwischen Quell- und Anwendungsdaten ist verbindlich: Der Sync darf Daten im `tourdata`-Schema ersetzen oder aktualisieren, überschreibt aber keine lokalen Planungsentscheidungen, Dokumente, Mailzustände, Alert-Historie oder Event-Zustellung.
 
 </Callout>
 
-## tourdata (Core Schema)
+## `tourdata` als source-owned Mirror
 
-The `tourdata` schema contains the core TourData mirror, including master data, the trip catalogue, people, bookings, invoices, and services.
+Das Schema `tourdata` enthält die aus TourData synchronisierten Stamm-, Katalog-, Personen-, Buchungs- und Leistungsdaten. Die Daten sind tenantbezogen; ein Trip-Code ist nicht global eindeutig.
 
-| Table | Description |
-|---|---|
-| `tenants` | Tenants represented in the mirror. |
-| `countries` | Countries referenced by trips and other TourData records. |
-| `sales_agents` | Sales agents associated with bookings and business processes. |
-| `service_types` | Service type reference data. |
-| `business_partners` | Business partners associated with trips, bookings, or services. |
-| `trips` | Mirrored trip catalogue records and trip-level attributes. |
-| `trip_countries` | Many-to-many relationships between trips and countries. |
-| `trip_departure_dates` | Departure dates associated with trips. |
-| `persons` | People referenced by bookings, participants, and operational data. |
-| `bookings` | Dossiers and booking-level data, including tenant, trip, customer, status, dates, passenger counts, and financial totals. |
-| `participants` | People participating in a booking. |
-| `invoices` | Invoices and payment-related booking data. |
-| `services` | Services associated with bookings or trips. |
-| `service_items` | Individual service items belonging to services. |
-| `service_item_participants` | Relationships between service items and participants. |
+| Tabelle | Beschreibung |
+| --- | --- |
+| `tourdata.tenants` | Mandanten, die im Mirror abgebildet werden. |
+| `tourdata.countries` | Länder mit Länder-ID, ISO-2-Code und Namen. |
+| `tourdata.sales_agents` | Vertriebsmitarbeiter mit Agent-Code, Namen und E-Mail-Adresse. |
+| `tourdata.service_types` | Leistungsarten mit Code, Name und Kategorie. Kategorien sind `land_service`, `transport` und `seating_plan`. |
+| `tourdata.business_partners` | Lieferanten, Agenturen, Adressen und Kontaktdaten von Geschäftspartnern. |
+| `tourdata.trips` | Trip-Katalog mit Namen, Kategorie, Ziel, Schiff, Preisen, Dauer, Bewertung, Garantie- und Ausverkauft-Status sowie JSONB-Daten für Texte, Bilder und Attribute. |
+| `tourdata.trip_countries` | Zuordnung zwischen Trips und Ländern. |
+| `tourdata.trip_departure_dates` | Abfahrten und zusätzliche Attribute der Trip-Termine. |
+| `tourdata.persons` | Personen- und Kundendaten, die von Buchungen und Teilnehmern referenziert werden. |
+| `tourdata.bookings` | Dossiers und Buchungen mit Trip-, Kunden- und Tenant-Referenzen, Status, Reisedaten, Passagierzahl und Finanzdaten. |
+| `tourdata.participants` | Teilnehmer einer Buchung mit Referenz auf eine Person und laufender Sequenznummer je Buchung. |
+| `tourdata.invoices` | Rechnungsbeträge, Buchungs- und Stornierungsdaten sowie JSONB-Details. |
+| `tourdata.services` | Polymorphe Buchungsleistungen mit Leistungsart, Zeitraum, Lieferant oder Agent sowie Transportfeldern. |
+| `tourdata.service_items` | Einzelne Leistungs- und Zusatzpositionen. |
+| `tourdata.service_item_participants` | Zuordnung von Teilnehmern zu Leistungspositionen einschließlich Sitzplatz- und Boarding-Daten. |
 
-Additional migrations extend the core model with sync metadata, customer addresses, club memberships, boarding stops and times, trip enrichment fields, recommendation filters, country ISO codes, tenant normalization, and real mutation tracking.
+### Trip-Schlüssel und Mutationserkennung
 
-## feedback_analytics
+Der fachliche Schlüssel eines Trips ist tenantbezogen:
 
-The `feedback_analytics` schema supports survey processing, feedback enrichment, recommendation data, and aggregate reporting.
+```text
+(tenant_id, trip_code)
+```
 
-| Table | Description |
-|---|---|
-| `survey` | Raw or normalized survey records from the Dossier data. |
-| `survey_sentiment` | Sentiment classifications, scores, summaries, and related analysis results. |
-| `survey_theme` | Themes, aspects, and polarity extracted from survey responses. |
-| `trip_recommendation` | LLM-generated or stored recommendations associated with trips and feedback. |
-| `question` | Survey question definitions. |
-| `choice` | Available choices for survey questions. |
-| `v_trip_enrichment` | Integration view combining feedback data with trip information. |
-| NPS materialized views | Precomputed Net Promoter Score buckets and related aggregates. |
-| Theme leaderboard materialized views | Precomputed rankings and aggregates for feedback themes. |
-| Rating aggregate tables | Aggregated question ratings and related analytical results. |
+Ein `trip_code` darf deshalb in mehreren Tenants vorkommen. Verwende für Joins, APIs und Exportlogik immer beide Werte.
 
-The mirror owns integration views and analytical support objects in this schema. Some application-owned tables are managed by the feedback analytics application.
+`tourdata.trips.raw_hash` unterstützt die Erkennung echter Änderungen:
 
-## tourdata.dispo_* (Raw Disposition Mirror)
+| `raw_hash` | Bedeutung |
+| --- | --- |
+| `NULL` | Der Datensatz wurde noch nicht vollständig angereichert. |
+| Leerer String | Der Datensatz wurde vor Einführung der Hash-basierten Mutationserkennung geschrieben. |
+| Versionierter SHA-256-Hash | Hash der aktuellen kanonischen Quellrepräsentation. |
 
-The `tourdata.dispo_*` objects contain raw disposition data synchronized from the TourData disposition API.
+Die gleiche Hash-Konvention gilt für die später ergänzten Spalten in `tourdata.bookings` und `tourdata.customers`. Nur neue oder tatsächlich geänderte Datensätze gelten als Mutationen und können Events erzeugen.
 
-| Table | Description |
-|---|---|
-| `dispo_vehicles` | Vehicles mirrored from the disposition system. |
-| `dispo_stops` | Stops used by dispositions and transports. |
-| `dispositions` | Raw disposition records. |
-| `dispo_assignments` | Assignment records associated with dispositions. |
-| `dispo_assignment_staff` | Staff assigned to disposition assignments. |
-| `dispo_assignment_criteria` | Criteria associated with disposition assignments. |
-| `dispo_transports` | Transport legs within dispositions. |
-| `dispo_transport_stops` | Stops belonging to transport legs. |
-| `dispo_transport_passengers` | Passenger relationships for transport legs. |
-| `dispo_sync_windows` | Synchronization windows for disposition data. |
-| `dispo_persons` | People referenced by the raw disposition mirror. |
-| `v_dispo_transport_passenger` | View combining transport and passenger information. |
-| `v_participant_boarding` | View exposing participant boarding locations and times. |
+### Buchungen und Leistungen
 
-This raw mirror is distinct from the `dispo` planning schema.
+`tourdata.bookings` enthält neben der lokalen `booking_id` die Quellreferenz `dsid`. Die Buchung verweist auf Tenant, Trip und Kunde und speichert Buchungsart, Status, Quelle, Reisedaten, Passagierzahl, Direktbuchungsflag, Vertriebsmitarbeiter sowie Rechnungs- und Zahlungssummen. Die Reisedaten stehen zusätzlich als generierter `daterange` für Zeitbereichsabfragen zur Verfügung.
 
-## dispo (Planning Schema)
+`tourdata.participants` verbindet die Buchung mit `tourdata.persons`. Die Sequenznummer ist innerhalb einer Buchung eindeutig und bildet die Reihenfolge der Teilnehmer ab. `tourdata.services` kann unterschiedliche Leistungsarten aufnehmen. Transportleistungen enthalten unter anderem Transportnummer, Klasse, Abfahrts- und Ankunftsorte sowie Zeitangaben.
 
-The `dispo` schema stores application-owned planning, staffing, assignment, and portal data.
+### Kundenerweiterungen
 
-| Table | Description |
-|---|---|
-| Staff | Staff records used for planning and assignments. |
-| Staff roles | Roles that staff members can perform. |
-| Staff tenants | Tenant associations for staff members. |
-| Staff languages | Languages associated with staff members. |
-| Staff qualifications | Qualifications associated with staff members. |
-| Assignments | Planned staff assignments. |
-| Assignment proposals | Proposed assignments generated during planning. |
-| Planning runs | Planning execution records and results. |
-| Decision logs | Audit records for assignment decisions. |
-| Trip requirements | Requirements associated with trips. |
-| Role, language, and qualification requirements | Staffing requirements by role, language, and qualification. |
-| Absences | Staff absence periods. |
-| Portal links | Links used to provide staff portal access. |
-| Preferences and self-limits | Staff planning preferences and self-imposed limits. |
-| Workload materialized views | Precomputed workload information for staff and planning periods. |
-| Demand materialized views | Precomputed staffing demand information. |
-| Comparison views | Planned-versus-actual and related operational comparisons. |
+Spätere Migrationen erweitern die Kunden- und Personendaten um:
 
-## velo_log
+- vollständige Adressdaten,
+- Präferenzen für die Dokumentzustellung,
+- Club- und Mitgliedschaftsinformationen.
 
-The `velo_log` schema stores application state used by Velo-log workflows.
+Diese Erweiterungen wurden unter anderem mit Migration `0057_customer_address_club` eingeführt.
 
-| Table | Description |
-|---|---|
-| Trip status | Status of a trip or departure in the Velo-log workflow. |
-| Bus and trailer assignments | Bus, trailer, and replacement vehicle assignments. |
-| Trip metadata | Additional departure-level metadata. |
-| Print state | Label-print, order-print, and complete print-cycle state. |
-| Participant snapshots | Snapshots of participants used by Velo-log operations. |
+## `tourdata.dispo_*` als raw disposition mirror
 
-## kd_store
+Die Tabellen `tourdata.dispo_*` bilden die Rohdaten der TourData Disposition API ab. Sie enthalten Fahrzeuge, Stopps, Dispositionen, Einsätze, Personal und Transportstrecken.
 
-The `kd_store` schema stores customer-document data and the assets and links used to publish those documents.
+| Tabelle oder View | Beschreibung |
+| --- | --- |
+| `tourdata.dispo_vehicles` | Fahrzeuge und Anhänger. Das Feld `kind` unterscheidet `fahrzeug` und `anhaenger`. |
+| `tourdata.dispo_stops` | Tenantbezogene Stopps mit Quell-ID und Stop-Code. |
+| `tourdata.dispositions` | Dispositionen mit ID, Tenant, Typ, Titel, Rohreferenz auf den Trip, optional aufgelöstem `trip_id`, Zeitraum und rohem JSONB-Payload. |
+| `tourdata.dispo_assignments` | Einsätze innerhalb einer Disposition mit Status, Fahrzeug, Anhänger, Garagen- und Bereitschaftszeiten sowie Orts- und Carler-Daten. |
+| `tourdata.dispo_assignment_staff` | Personal eines Einsatzes mit Rolle, Status und Namen. `person_id` kann `NULL` sein, weil die Disposition API v2 keine stabilen Personen-IDs liefert. |
+| `tourdata.dispo_assignment_criteria` | Kriterien und Werte eines Einsatzes. |
+| `tourdata.dispo_transports` | Transportabschnitte innerhalb von Dispositionen. |
+| `tourdata.dispo_transport_stops` | Stopps und Reihenfolge eines Transportabschnitts. |
+| `tourdata.dispo_transport_passengers` | Passagiere eines Transportabschnitts mit Booking- und Participant-Referenzen. |
+| `tourdata.dispo_sync_windows` | Rollierende Suchfenster von 31 Tagen. Sie sind erforderlich, weil die Disposition API keinen Mutations-Cursor anbietet. |
+| `tourdata.dispo_persons` | Personen, die im rohen Dispositionsdatensatz referenziert werden. |
+| `tourdata.v_dispo_transport_passenger` | View, die Transport-, Buchungs- und Teilnehmerinformationen zusammenführt. |
+| `tourdata.v_participant_boarding` | View mit Boarding-Stopps aus Buchungsdaten und geplanter Dispositionsroute. |
 
-| Table | Description |
-|---|---|
-| Tenant | Tenant associated with a stored document or asset. |
-| Scope | Whitelisted document scope, such as `doc`, `trip`, `departure`, or `template`. |
-| Key | Identifier for the stored document within its scope. |
-| JSONB document data | Generic document content stored as JSONB. |
-| Content-addressed assets | Assets addressed by their content hash. |
-| Revoked links | Customer links that are no longer valid. |
+`tourdata.dispositions` speichert außerdem `raw_hash`, Soft-Delete-Status sowie Zeitpunkte für das erste und letzte Auftreten. Die Trip-Auflösung ist optional: Die Rohreferenz bleibt erhalten, auch wenn noch kein passender `tourdata.trips`-Datensatz gefunden wurde.
 
-## workspace
+<Callout kind="info">
 
-The `workspace` schema stores shared notes attached to business entities.
+`tourdata.dispo_*` ist ein ersetzbarer Raw Mirror und darf durch die Synchronisation aktualisiert werden. `dispo.*` ist dagegen das application-owned Planungsschema. Lokale Planungen und bestätigte Zuweisungen werden durch die Quellaufnahme nicht überschrieben.
 
-| Table | Description |
-|---|---|
-| Entity type | Type of entity receiving the note, such as a booking, trip, or customer. |
-| Entity key | Identifier of the referenced entity. |
-| Tenant | Tenant context for the note. |
-| Author | Entra identity of the note author. |
-| Flag | Importance or status flag for the note. |
-| JSONB content | Markdown note content and optional rendering metadata. |
-| Origin | Application or source that created the note. |
-| Timestamps | Created and updated timestamps. |
+</Callout>
 
-## mail
+## `_sync` als Synchronisationsmetadaten
 
-The `mail` schema stores messages before and during delivery through the centralized mail service.
+Das Schema `_sync` beschreibt Runs, Cursor und die Liveness einzelner Datenströme. Es enthält keine fachliche Quelle der Wahrheit für Trips, Buchungen oder Kunden.
 
-| Table | Description |
-|---|---|
-| Senders | Authorized sender identities and mailboxes. |
-| App-to-sender permissions | Permissions that control which applications may use senders. |
-| Templates | Reusable mail templates. |
-| Messages | Rendered messages persisted before delivery. |
-| Delivery attempts | Delivery history, retries, and transport results. |
+| Tabelle | Beschreibung |
+| --- | --- |
+| `_sync.run` | Synchronisationslauf mit `run_id`, Entity, Start- und Endzeit, Status, Anzahl geschriebener Datensätze, letztem Source-Cursor und Fehlermeldung. |
+| `_sync.cursor` | Letzter Cursor je Entity mit Änderungszeitpunkt. |
+| `_sync.stream_seen` | Liveness- und Historientabelle je Tenant und Stream mit Zeitpunkt, gelesenen und geänderten Datensätzen. |
 
-## alert
+`_sync.run.status` verwendet diese Werte:
 
-The `alert` schema stores rule-based alert configuration and execution history.
+| Status | Bedeutung |
+| --- | --- |
+| `running` | Der Lauf wurde gestartet und ist noch nicht abgeschlossen. |
+| `succeeded` | Der Lauf wurde erfolgreich beendet. |
+| `failed` | Der Lauf wurde mit einem Fehler beendet. |
 
-| Table | Description |
-|---|---|
-| Metrics | Registered metrics evaluated by the alert engine. |
-| Rules | Alert conditions, scopes, frequencies, and recipients. |
-| Rule history | Historical changes and evaluation information for rules. |
-| Alert triggers | Triggered, cleared, and reopened alert instances. |
+`_sync.stream_seen` unterstützt die Erkennung veralteter Daten. Ein Eintrag mit `rows_read = 0` zeigt, dass ein Job gelaufen ist und keine Datensätze gelesen hat. Ein fehlender Eintrag zeigt dagegen, dass der Job oder Stream nicht nachweisbar ausgeführt wurde.
 
-## event
+Die Spalten `raw_hash` in `tourdata.trips`, `tourdata.bookings` und `tourdata.customers` speichern die kanonische Quellrepräsentation. `NULL` steht für einen noch nicht vollständig angereicherten Datensatz, ein leerer String für einen Datensatz aus der Zeit vor der Hash-Erkennung und ein versionierter SHA-256-Wert für den aktuellen Stand.
 
-The `event` schema supports inbox and outbox processing, endpoint registration, and event delivery.
+## `dispo` als application-owned Planung
 
-| Table | Description |
-|---|---|
-| Inbox messages | Incoming event messages retained for processing and deduplication. |
-| Outbox events | Events queued for publication. |
-| Endpoint registrations | Registered event delivery endpoints. |
-| Endpoint profiles | Delivery configuration and endpoint behavior profiles. |
-| Delivery attempts | Attempts to deliver events to registered endpoints. |
-| Event status and retention data | Processing state, delivery status, and retention metadata. |
+Das Schema `dispo` enthält lokale Personal-, Anforderungs- und Planungsdaten. Die Daten sind nicht Teil des ersetzbaren Raw Mirrors.
 
-## AI
+### Referenz- und Modelltabellen
 
-The `AI` schema stores configuration and metadata for AI-assisted processing.
+| Tabelle oder Typ | Beschreibung |
+| --- | --- |
+| `dispo.data_source` | Enum für `api`, `portal`, `manual` und `csv`. |
+| `dispo.source_rank` | Priorität einer Datenquelle bei konkurrierenden Angaben. |
+| `dispo.import_batch` | Metadaten eines Imports, beispielsweise aus CSV- oder Profilquellen. |
+| `dispo.import_issue` | Validierungswarnungen und Fehler mit Bezug auf Importzeilen. |
+| `dispo.language` | Referenz der verfügbaren Sprachen. |
+| `dispo.language_level` | Niveaustufen für Sprachkenntnisse. |
+| `dispo.qualification_type` | Arten von Qualifikationen. |
+| `dispo.qualification_grade` | Bewertungs- oder Einstufungsstufen von Qualifikationen. |
+| `dispo.attribute_type` | Kategorien für fachliche oder organisatorische Attribute. |
+| `dispo.attribute_value` | Werte eines Attributtyps. |
+| `dispo.staff_role` | Planungsrollen wie `tour_guide`, `driver_1`, `driver_2` sowie nicht gemappte API-Rollen wie `api_11`, `api_30`, `api_31`, `api_39`, `api_40`, `api_49` und `api_90`. |
+| `dispo.assignment_status_map` | Zuordnung von Quell- und lokalen Einsatzstatus. |
 
-| Table | Description |
-|---|---|
-| AI settings | Current settings for AI-assisted tasks and providers. |
-| Setting history | Historical versions of AI settings. |
-| AI task registry | Registered AI tasks and their capabilities. |
-| Model and task metadata | Models, task associations, and related administration metadata. |
+### Personal und Personen
 
-## _sync
+| Tabelle | Beschreibung |
+| --- | --- |
+| `dispo.staff` | Gruppenweite Personalstammdaten mit natürlicher Quellreferenz, Heim-Tenant, Source-Mandant, Personalnummer, Kontakt- und Beschäftigungsdaten sowie Herkunftsstatus. |
+| `dispo.staff_tenant` | Tenantbezogene Einsatzberechtigung und Einsatzlimits. |
+| `dispo.staff_identity_candidate` | Nicht eindeutig aufgelöste Personen-Kandidaten, wenn die Quelle keine stabile ID liefert. |
+| `dispo.staff_function` | Funktionen eines Mitarbeiters. |
+| `dispo.staff_language` | Sprachkenntnisse und Niveaus. |
+| `dispo.staff_qualification` | Qualifikationen und Einstufungen. |
+| `dispo.staff_attribute` | Attribute und zugehörige Werte. |
+| `dispo.staff_pair_rule` | Inkompatible oder bevorzugte Personalkombinationen. |
+| `dispo.staff_absence` | Gesperrte, verfügbare oder bevorzugte Zeiträume. |
+| `dispo.staff_preference` | Individuelle Präferenzen für die Planung. |
+| `dispo.staff_standard_trip` | Standard- oder Stammpersonen für bestimmte Trips. |
 
-The `_sync` schema stores bookkeeping for initial imports, incremental synchronization, and refresh operations.
+`dispo.staff` ist gruppenweit modelliert. Die fachliche Einsatzberechtigung und die tatsächliche Planung bleiben tenantgebunden und werden über `dispo.staff_tenant` sowie die Assignment-Tabellen abgebildet.
 
-| Table | Description |
-|---|---|
-| Sync runs | Synchronization runs with entity, status, timestamps, record counts, cursors, and errors. |
-| Entity cursors | Incremental synchronization positions for individual entities. |
-| Refresh logs | Records of targeted refresh operations. |
-| Ingestion bookkeeping | Additional metadata used to coordinate and monitor ingestion. |
+### Trip-Anforderungen
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `dispo.trip_requirement` | Grundlegende Anforderungen eines Trips, einschließlich Personalbedarf und Eskalation nach Passagierzahl. |
+| `dispo.trip_requirement_language` | Erforderliche Sprachen und Niveaus. |
+| `dispo.trip_requirement_attribute` | Erforderliche oder ausgeschlossene Attribute. |
+| `dispo.trip_requirement_attribute_value` | Konkrete Attributwerte einer Anforderung. |
+| `dispo.trip_requirement_role` | Benötigte Rollen und Mindest- oder Höchstbesetzung. |
+| `dispo.trip_requirement_qualification` | Erforderliche Qualifikationen. |
+
+Trip-Anforderungen können auch feste Personen, Lead- und Trail-Tage sowie weitere staffing-relevante Bedingungen abbilden.
+
+### Planung und Entscheidungen
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `dispo.weight_profile` | Gewichtungsprofil für die Bewertung von Planungsvorschlägen. |
+| `dispo.weight_item` | Einzelne Gewichtung innerhalb eines Profils. |
+| `dispo.planning_run` | Ausführung eines Planungslaufs mit Ergebnissen und Status. |
+| `dispo.assignment_proposal` | Automatisch oder manuell erzeugter Vorschlag für eine Zuweisung. |
+| `dispo.assignment` | Application-owned Zuweisung von Personal zu einem Einsatz. |
+| `dispo.decision_log` | Auditdaten zu Planungs- und Zuweisungsentscheidungen. |
+
+`dispo.assignment` besitzt eine GiST-Exclusion-Constraint, die überlappende angeforderte oder bestätigte Einsätze für dieselbe Person verhindert.
+
+### Materialized Views
+
+| View | Beschreibung |
+| --- | --- |
+| `dispo.mv_staff_experience` | Aggregierte Erfahrung von Personal. |
+| `dispo.mv_staff_destination_experience` | Erfahrung nach Zielgebiet oder Destination. |
+| `dispo.mv_staff_workload` | Aggregierte Arbeitslast je Person und Zeitraum. |
+| `dispo.mv_departure_demand` | Abgeleiteter Personalbedarf je Abfahrt. |
+
+### Views
+
+| View | Beschreibung |
+| --- | --- |
+| `dispo.v_staff_pair_rule` | Lesemodell für bevorzugte und inkompatible Personalkombinationen. |
+| `dispo.v_departure_staffing` | Besetzung und Staffing-Status je Abfahrt. |
+| `dispo.v_departure_without_requirement` | Abfahrten ohne hinterlegte Trip-Anforderung. |
+| `dispo.v_staff_qualification_rank` | Rangfolge von Personal nach Qualifikationsstand. |
+| `dispo.v_staff_without_ref` | Personal ohne aufgelöste Quellreferenz. |
+| `dispo.v_assignment_vs_source` | Vergleich zwischen lokaler Zuweisung und Quell-Disposition. |
+
+## `velo_log` als Velo-Log-Anwendung
+
+Das Schema `velo_log` speichert lokale Daten für Velo-Log-Abläufe. Alle fachlichen Datensätze sind um diesen Schlüssel organisiert:
+
+```text
+tenant_id + trip_code + departure_date
+```
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `velo_log.trip_status` | Status eines Trips oder einer Abfahrt. |
+| `velo_log.bus_anhaenger` | Bus- und Anhängernummern für ein Trip-Ereignis. |
+| `velo_log.trip_meta` | Ersatzfahrräder, Extras und Anzahl der Reiseleiter. |
+| `velo_log.trip_print_state` | Druckstatus für Labels und Bestellungen sowie Teilnehmer-Snapshot zur Erkennung von Änderungen. |
+
+<Callout kind="alert">
+
+Schreibzugriffe auf `velo_log` sind durch `VELO_WRITE_ENABLED` geschützt. Eine deaktivierte Einstellung verhindert Schreiboperationen über die Velo-API, während Lesezugriffe weiterhin möglich sein können.
+
+</Callout>
+
+## `kd_store` als Customer Document Store
+
+`kd_store` speichert Dokumentdaten, Assets und Veröffentlichungszustände der Kundendokument-Anwendung. Die Anwendung greift über die KDDoc-API zu und verbindet sich nicht direkt mit PostgreSQL.
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `kd_store.app_data` | Tenant, Scope, fachliche ID, beliebige JSONB-Daten und Änderungszeitpunkt. |
+
+Unterstützte Scopes von `kd_store.app_data` sind:
+
+- `doc`
+- `trip`
+- `library`
+- `libocks`
+- `template`
+
+Weitere Funktionen umfassen content-addressed Assets, widerrufene öffentliche Links, Workspace-Notizen und die öffentliche Dokumentansicht über Capability-Tokens.
+
+<Callout kind="alert">
+
+Schreibzugriffe auf den KDDoc-Bereich sind durch `KD_DOC_WRITE_ENABLED` geschützt. Öffentliche Dokumentlinks verwenden Capability-Tokens und sind von der normalen Entra-Authentifizierung getrennt.
+
+</Callout>
+
+## `feedback_analytics` für Feedback und Analysen
+
+Das Schema `feedback_analytics` enthält Survey-Daten, Analyseergebnisse und Read Models. Die Surveys werden aus Dossier synchronisiert und können mit Sentiment-, Themen- und Empfehlungsergebnissen angereichert werden.
+
+| Tabelle oder View | Beschreibung |
+| --- | --- |
+| `feedback_analytics.survey` | Rohe oder normalisierte Survey-Datensätze aus Dossier. |
+| `feedback_analytics.survey_sentiment` | Sentiment-Klassifikationen, Scores und Zusammenfassungen. |
+| `feedback_analytics.survey_theme` | Extrahierte Themen, Aspekte und Polarität. |
+| `feedback_analytics.trip_recommendation` | Gespeicherte oder LLM-generierte Empfehlungen zu Trips und Feedback. |
+| `feedback_analytics.question` | Definitionen der Survey-Fragen. |
+| `feedback_analytics.choice` | Verfügbare Antwortoptionen. |
+| `feedback_analytics.v_trip_enrichment` | Integrations-View, die Feedback-Trip-Codes mit `tourdata.trips` verbindet und Kategorie, Name, Ziel, repräsentative Buchungsdaten, Landservices und Transporte bereitstellt. |
+
+Zusätzlich existieren:
+
+- NPS-Materialized-Views,
+- Materialized-Views für Themen-Ranglisten,
+- Rating-Aggregate,
+- normalisierte Score-Felder.
+
+Ein Teil der Survey- und Analyse-Tabellen wird durch Alembic-Migrationen der Feedback-Analytics-Anwendung verwaltet. Der Mirror besitzt insbesondere Integrations-Views und analytische Read Models.
+
+## `mail` als zentraler Mail-Service
+
+Das Schema `mail` speichert Nachrichten vor und während der Zustellung. Die Nachricht wird vor dem Versand vollständig gerendert.
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `mail.sender` | Autorisierte Absenderidentitäten und Mailboxen. |
+| `mail.app_sender` | Datenbasierte Berechtigung, welche Anwendung welchen Absender verwenden darf. |
+| `mail.template` | Wiederverwendbare Mailvorlagen. |
+| `mail.message` | Gerenderte Outbox-Nachricht mit Client- oder Application-Idempotency-Key und Zustellstatus. |
+| `mail.attempt` | Einzelne Zustellversuche, Retries und Transportergebnisse. |
+
+`mail.message.status` verwendet:
+
+- `queued`
+- `sending`
+- `sent`
+- `failed`
+- `suppressed`
+
+Personenbezogene Daten werden nach Ablauf der Aufbewahrungsfrist redigiert und später gelöscht. In der Produktion erfolgt der Versand über Microsoft Graph und eine Shared Mailbox. In lokalen Umgebungen kann der Transport auf Konsolenausgabe begrenzt sein.
+
+## `alert` als Alert Engine
+
+Das Schema `alert` speichert Metriken, Regeln und die Historie ausgelöster Bedingungen.
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `alert.metric` | Registrierte Metriken, die durch die Alert Engine ausgewertet werden. |
+| `alert.rule` | Schwellwerte, Vergleichsrichtung, Scope, Frequenz, Empfänger, Mailvorlagen und Dry-Run-Konfiguration. |
+| `alert.rule_history` | Historische Änderungen an Regeln und Auswertungsinformationen. |
+| `alert.trigger` | Ausgelöste, gelöschte und erneut geöffnete Alert-Instanzen. |
+
+Regeln unterstützen:
+
+- obere und untere Schwellwerte,
+- statistische Metriken mit einer verpflichtenden Mindestanzahl von Stichproben,
+- Scopes auf Tenant-, Trip- und Trip-Kind-Ebene,
+- die Frequenzen `immediate`, `daily` und `weekly`,
+- Empfängerlisten und Mailvorlagen,
+- Dry-Run-Auswertungen.
+
+Ein offener Trigger wird dedupliziert, bis die Bedingung nicht mehr erfüllt ist. Danach kann dieselbe Bedingung erneut einen Trigger erzeugen.
+
+## `event` als Event-Pipeline
+
+Das Schema `event` verwaltet Outbox, Abonnements, Endpunkte, Zustellungen und persönliche Inbox-Einträge. Eine Domain-Mutation und der zugehörige Outbox-Eintrag werden in derselben Transaktion geschrieben.
+
+### Outbox und Endpunkte
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `event.outbox` | Event mit UUID `event_id`, global monotoner `seq`, Topic, optionalem Tenant, Entity-Typ und Entity-Key, Severity, JSONB-Payload, Deduplizierungsschlüssel, Producer und Produktionszeitpunkt. |
+| `event.endpoint` | Zustellziel mit Name, HTTPS-URL, Endpoint-Typ, `secret_ref`, Batch-Größe, aktivem oder pausiertem Status, Fehlerzähler und `fanout_seq`-Cursor. |
+| `event.subscription` | Filter nach Topic oder terminalem Wildcard wie `alert.*`, Tenant, Mindestseverity, JSONB-Containment-Filter und Aktivstatus. |
+
+`event.outbox.payload` ist bewusst klein und schlüsselorientiert. Die Payload enthält Identifikatoren und Kontext, aber keine vollständigen Kunden- oder Personendatensätze. Konsumenten rufen Detaildaten über die Read API ab.
+
+`event.endpoint.secret_ref` enthält nur den Verweis auf ein Secret. Das Secret selbst liegt nicht in der Datenbank, sondern wird aus der Umgebung oder aus Azure Key Vault aufgelöst.
+
+### Zustellung und Inbox
+
+| Tabelle | Beschreibung |
+| --- | --- |
+| `event.delivery` | Eine Zeile pro Event-Endpoint-Paar mit Event- und Endpoint-Referenzen, Sequenznummer, Entity-Lane, Status, Versuchszahl, Retry-Zeitpunkt, letztem Fehler oder HTTP-Status sowie Zustellzeitpunkt. |
+| `event.attempt` | Einzelner Zustellversuch mit Delivery-ID, Zeitpunkt, Ergebnis, HTTP-Status und Fehlerklasse oder Fehlermeldung. |
+| `event.inbox_item` | Persönlicher Inbox-Eintrag mit `read_at`, `acknowledged_at` und `snoozed_until`. |
+
+`event.delivery.status` verwendet:
+
+- `queued`
+- `sending`
+- `delivered`
+- `failed`
+
+Die Zustellung unterstützt CloudEvents 1.0 und HMAC-SHA256-Signaturen nach dem Standard-Webhooks-Muster. Signierte Requests verwenden die Header `webhook-id`, `webhook-timestamp` und `webhook-signature`. Ein stabiler Webhook-Identifier ermöglicht die Idempotenz über Retries hinweg.
