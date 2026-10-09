@@ -129,8 +129,8 @@
           {
             "group": "Endpoints",
             "icon": "terminal",
-            "openapi": "api-reference/openapi.yaml",
-            "pages": []
+            "pages": [],
+            "openapi": "api-reference/openapi.json"
           }
         ]
       },
@@ -196,7 +196,7 @@
     "actions": {
       "primary": {
         "title": "Mirror Debug",
-        "link": "https://ase-disposition-staging.azurewebsites.net/debug"
+        "link": "https://ca-twg-tdmirror-dev-readapi.proudpebble-06225363.switzerlandnorth.azurecontainerapps.io/debug"
       }
     }
   }
