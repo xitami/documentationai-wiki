@@ -1,0 +1,543 @@
+---
+title: CLI-Referenz
+description: >-
+  Every tdm-* CLI command — migrations, backfills, ingestion, enrichment,
+  alerts, events, mail, database snapshots, disposition, and MCP servers — with
+  all subcommands, options, and usage examples.
+---
+## CLI overview
+
+The TourData Mirror ships 18 CLI commands under the `tdm-` prefix. They cover schema migrations, data ingestion from TourData APIs, LLM enrichment, analytics, alerting, event delivery, mail, database snapshots, disposition management, and MCP server startup. All commands are Typer-based and installed via `pip install -e .[dev]` or the appropriate extras.
+
+| Command                    | Category    | Purpose                                                          |
+| -------------------------- | ----------- | ---------------------------------------------------------------- |
+| `tdm-migrate`              | Schema      | Apply and inspect database migrations                            |
+| `tdm-backfill`             | Data        | Load trips, bookings, customers, personnel, and disposition data |
+| `tdm-ingest`               | Data        | Import survey data                                               |
+| `tdm-enrich`               | Enrichment  | Enrich individual trips or all eligible records                  |
+| `tdm-analyze`              | Analytics   | Run analytics processing                                         |
+| `tdm-refresh-views`        | Database    | Refresh database views                                           |
+| `tdm-explore`              | Exploration | Inspect dossiers without writing to the database                 |
+| `tdm-purge`                | Maintenance | Preview and remove data                                          |
+| `tdm-alerts`               | Alerts      | Create, validate, activate, and run alert rules                  |
+| `tdm-events`               | Events      | Manage event endpoints and delivery                              |
+| `tdm-mail-deliver`         | Mail        | Deliver queued mail and optional retention or alert mail         |
+| `tdm-db-export`            | Snapshots   | Export a database snapshot                                       |
+| `tdm-db-import`            | Snapshots   | Import a database snapshot                                       |
+| `tdm-dispo-bootstrap`      | Disposition | Create initial disposition data                                  |
+| `tdm-dispo-profile-import` | Disposition | Import and verify disposition profiles                           |
+| `tdm-mcp`                  | MCP         | Start the MCP server over stdio                                  |
+| `tdm-mcp-http`             | MCP         | Start the MCP server over streamable HTTP                        |
+| `tdm-mcp-remote`           | MCP         | Start the Entra-authenticated remote MCP server                  |
+
+Use `tdm-<command> --help` or `tdm-<command> <subcommand> --help` to display the installed command's complete help text.
+
+## Schema & Migrationen
+
+Use `tdm-migrate up` to apply pending migrations. Use `--until` to stop after a migration prefix, or use `status` to inspect applied and pending migrations.
+
+<CodeGroup show-lines="true">
+  ```bash
+  tdm-migrate up
+  tdm-migrate up --until 0002
+  ```
+
+  ```bash
+  tdm-migrate status
+  ```
+</CodeGroup>
+
+<ParamField body="--until" param-type="string" required="false" deprecated="false" show-location="true">
+  Stops migration execution after the migration whose filename starts with the supplied prefix.
+</ParamField>
+
+<Callout kind="tip" collapsed="false">
+  Run `tdm-migrate status` before applying migrations in a shared environment. The command lets you verify which migration prefixes remain pending.
+</Callout>
+
+## Daten-Backfill & Ingestion
+
+Backfill commands load source data into the mirror. Provide the tenant identifier where the command supports tenant-scoped synchronization.
+
+### `tdm-backfill trips`
+
+Enriches trips already present in the mirror. Use `--with-catalogue` when the backfill must also discover all trips visible to the Web Trip login.
+
+```bash
+tdm-backfill trips --tenant T
+tdm-backfill trips --tenant T --with-catalogue
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant identifier used for the Web Trip connection and database writes.
+</ParamField>
+
+<ParamField body="--with-catalogue" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Adds all trips visible to the Web Trip catalogue in addition to trips referenced by surveys.
+</ParamField>
+
+### `tdm-backfill trips-soon`
+
+Refreshes trips that depart within the configured window or are currently in progress. The default window is seven days.
+
+```bash
+tdm-backfill trips-soon --tenant T
+tdm-backfill trips-soon --tenant T --days 14
+```
+
+<ParamField body="--days" param-type="integer" required="false" deprecated="false" show-location="true">
+  Number of days from the current date used to select imminent trips. The default is `7`.
+</ParamField>
+
+<Callout kind="info" collapsed="false">
+  The fast trip refresh skips when a full `trips` run started within the last three hours or another `trips-soon` run started within the last 30 minutes.
+</Callout>
+
+### `tdm-backfill bookings`
+
+Synchronizes dossiers for a tenant. The default mode uses the tenant-specific `mutationsDatum` cursor.
+
+```bash
+tdm-backfill bookings --tenant T
+tdm-backfill bookings --tenant T --ignore-cursor
+tdm-backfill bookings --tenant T --abreise-von 2025-06-01 --max-records 500
+```
+
+<ParamField body="--ignore-cursor" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Ignores the persisted booking cursor and starts an absolute backfill. Booking change events are disabled for this mode.
+</ParamField>
+
+<ParamField body="--abreise-von" param-type="date" required="false" deprecated="false" show-location="true">
+  Limits the source search to dossiers departing on or after the supplied date.
+</ParamField>
+
+<ParamField body="--erfasst-von" param-type="datetime" required="false" deprecated="false" show-location="true">
+  Filters processed dossiers by their recorded or created timestamp.
+</ParamField>
+
+<ParamField body="--max-records" param-type="integer" required="false" deprecated="false" show-location="true">
+  Stops after processing the requested number of dossiers.
+</ParamField>
+
+### `tdm-backfill customers`
+
+Synchronizes customers referenced by bookings. Use `--stale-days` to limit the run to customers whose last synchronization is older than the supplied number of days.
+
+```bash
+tdm-backfill customers --tenant T
+tdm-backfill customers --tenant T --stale-days 30
+```
+
+<ParamField body="--stale-days" param-type="integer" required="false" deprecated="false" show-location="true">
+  Processes customers whose `synced_at` value is missing or older than the specified number of days.
+</ParamField>
+
+### `tdm-backfill reisepersonal`
+
+Backfills travel personnel data for a tenant.
+
+```bash
+tdm-backfill reisepersonal --tenant T
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant identifier used to select and store travel personnel records.
+</ParamField>
+
+### `tdm-backfill dispositions`
+
+Backfills disposition records for a tenant.
+
+```bash
+tdm-backfill dispositions --tenant T
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant identifier used to select and store disposition records.
+</ParamField>
+
+### `tdm-backfill dispo-trips`
+
+Backfills the relationship between dispositions and trips.
+
+```bash
+tdm-backfill dispo-trips --tenant T
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant identifier used to select and store disposition trip relationships.
+</ParamField>
+
+### `tdm-ingest surveys`
+
+Imports survey data into the mirror.
+
+```bash
+tdm-ingest surveys --tenant T
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant identifier used for survey ingestion.
+</ParamField>
+
+<Callout kind="tip" collapsed="false">
+  Backfills are resumable and idempotent. Cursor position is persisted after each record, so a later run can continue after an interruption without rewriting unchanged records.
+</Callout>
+
+## Enrichment & Analytics
+
+Use enrichment commands after the relevant source records exist in the mirror. `trip` targets a specific trip, while `all` processes all eligible records.
+
+### `tdm-enrich trip`
+
+```bash
+tdm-enrich trip --tenant T --trip-code ALP-2025-001
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant that owns the trip.
+</ParamField>
+
+<ParamField body="--trip-code" param-type="string" required="true" deprecated="false" show-location="true">
+  Trip code to enrich.
+</ParamField>
+
+### `tdm-enrich all`
+
+```bash
+tdm-enrich all --tenant T
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant whose eligible trips are enriched.
+</ParamField>
+
+### `tdm-analyze`
+
+Runs the analytics processing pipeline.
+
+```bash
+tdm-analyze --tenant T
+```
+
+<ParamField body="--tenant" param-type="string" required="false" deprecated="false" show-location="true">
+  Limits analytics processing to one tenant when supplied.
+</ParamField>
+
+### `tdm-refresh-views`
+
+Refreshes the database views used by reporting and exploration workflows.
+
+```bash
+tdm-refresh-views
+```
+
+<Callout kind="info" collapsed="false">
+  Refresh views after a bulk import or a backfill when downstream queries depend on materialized or derived data.
+</Callout>
+
+## Exploration & Wartung
+
+### `tdm-explore dossiers`
+
+Reads dossier data for inspection without changing the database.
+
+```bash
+tdm-explore dossiers --tenant T --booking-id BKG-2025-00421
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant used to authenticate the dossier request.
+</ParamField>
+
+<ParamField body="--booking-id" param-type="string" required="false" deprecated="false" show-location="true">
+  Limits exploration to one booking identifier.
+</ParamField>
+
+<Callout kind="info" collapsed="false">
+  `tdm-explore dossiers` is read-only. It does not write dossier data, update cursors, or emit booking events.
+</Callout>
+
+### `tdm-purge`
+
+Previews removable data by default. Add `--execute` only after reviewing the preview.
+
+```bash
+tdm-purge
+tdm-purge --execute
+```
+
+<ParamField body="--execute" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Executes the purge instead of printing the records and scope that would be removed.
+</ParamField>
+
+<Callout kind="alert" collapsed="false">
+  `tdm-purge` is destructive. Always run it without `--execute` first to preview the operation.
+</Callout>
+
+## Alerts
+
+The alert command manages rules and executes their evaluation and delivery workflows.
+
+### Run and verify rules
+
+```bash
+tdm-alerts run
+tdm-alerts dry-run
+tdm-alerts metrics
+```
+
+`run` evaluates active rules and performs their configured actions. `dry-run` evaluates rules without applying alert actions. `metrics` reports alert processing metrics.
+
+### Create, update, and activate rules
+
+```bash
+tdm-alerts create --name booking-delay --description "Booking delay threshold"
+tdm-alerts update --name booking-delay
+tdm-alerts set-active --name booking-delay --active
+```
+
+<ParamField body="--name" param-type="string" required="true" deprecated="false" show-location="true">
+  Rule name used by `create`, `update`, and `set-active`.
+</ParamField>
+
+<ParamField body="--description" param-type="string" required="false" deprecated="false" show-location="true">
+  Human-readable description stored with a new or updated rule.
+</ParamField>
+
+<ParamField body="--active" param-type="boolean" required="true" deprecated="false" show-location="true">
+  Whether `set-active` should activate or deactivate the selected rule.
+</ParamField>
+
+<Callout kind="info" collapsed="false">
+  Rules are always created inactive. Run a fresh `tdm-alerts dry-run` before activating a rule.
+</Callout>
+
+## Events
+
+The event CLI manages delivery endpoints, subscriptions, and the event outbox.
+
+### Manage endpoints
+
+```bash
+tdm-events endpoint add --url https://events.acme.test/tourdata
+tdm-events endpoint list
+tdm-events endpoint pause --endpoint-id ep_01J8M2R7K4
+tdm-events endpoint resume --endpoint-id ep_01J8M2R7K4
+```
+
+<ParamField body="--url" param-type="string" required="true" deprecated="false" show-location="true">
+  HTTPS endpoint URL that receives delivered events.
+</ParamField>
+
+<ParamField body="--endpoint-id" param-type="string" required="true" deprecated="false" show-location="true">
+  Endpoint identifier used by endpoint lifecycle commands.
+</ParamField>
+
+### Manage subscriptions
+
+```bash
+tdm-events subscribe --endpoint-id ep_01J8M2R7K4 --topic booking.changed
+tdm-events unsubscribe --endpoint-id ep_01J8M2R7K4 --topic booking.changed
+```
+
+<ParamField body="--topic" param-type="string" required="true" deprecated="false" show-location="true">
+  Event topic to subscribe or unsubscribe from.
+</ParamField>
+
+### Deliver and inspect events
+
+```bash
+tdm-events deliver
+tdm-events tail
+```
+
+`deliver` sends pending outbox events to active endpoints. `tail` follows recent event activity for operational inspection.
+
+<Callout kind="alert" collapsed="false">
+  Endpoint URLs are subject to SSRF protection. Use an approved HTTPS destination, and do not configure endpoints that resolve to private, loopback, link-local, or other restricted network addresses.
+</Callout>
+
+## Mail
+
+`tdm-mail-deliver` delivers queued mail. Retention and alert messages are opt-in.
+
+```bash
+tdm-mail-deliver
+tdm-mail-deliver --with-retention
+tdm-mail-deliver --with-alerts
+tdm-mail-deliver --with-retention --with-alerts
+```
+
+<ParamField body="--with-retention" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Includes retention-related mail in the delivery run.
+</ParamField>
+
+<ParamField body="--with-alerts" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Includes alert mail in the delivery run.
+</ParamField>
+
+## Datenbank-Snapshots
+
+### `tdm-db-export`
+
+Exports a database snapshot to the configured destination.
+
+```bash
+tdm-db-export --output snapshots/tourdata-2025-06-01.dump
+```
+
+<ParamField body="--output" param-type="path" required="false" deprecated="false" show-location="true">
+  Destination path for the exported snapshot.
+</ParamField>
+
+### `tdm-db-import`
+
+Imports a database snapshot.
+
+```bash
+tdm-db-import --input snapshots/tourdata-2025-06-01.dump --yes
+```
+
+<ParamField body="--input" param-type="path" required="true" deprecated="false" show-location="true">
+  Path to the snapshot that should be imported.
+</ParamField>
+
+<ParamField body="--yes" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Confirms the destructive import operation.
+</ParamField>
+
+<Callout kind="alert" collapsed="false">
+  `tdm-db-import` is destructive. It requires `--yes` or `SNAPSHOT_IMPORT_CONFIRM=1`. Production-looking database hosts are rejected.
+</Callout>
+
+## Disposition
+
+### `tdm-dispo-bootstrap`
+
+Creates the initial disposition data for a tenant. Without `--apply`, the command previews the changes.
+
+```bash
+tdm-dispo-bootstrap --tenant T
+tdm-dispo-bootstrap --tenant T --role R
+tdm-dispo-bootstrap --tenant T --role R --apply
+```
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant that receives the bootstrap data.
+</ParamField>
+
+<ParamField body="--role" param-type="string" required="false" deprecated="false" show-location="true">
+  Limits bootstrap data to the supplied disposition role.
+</ParamField>
+
+<ParamField body="--apply" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Writes the planned bootstrap changes. Without this flag, the command previews them.
+</ParamField>
+
+### `tdm-dispo-profile-import`
+
+Imports disposition profiles and supports separate dry-run, apply, and verification modes.
+
+```bash
+tdm-dispo-profile-import --dry-run --tenant T --file profiles/dispositions.yaml
+tdm-dispo-profile-import --apply --tenant T --file profiles/dispositions.yaml
+tdm-dispo-profile-import --verify --tenant T --file profiles/dispositions.yaml
+```
+
+<ParamField body="--dry-run" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Validates the profile and previews changes without writing them.
+</ParamField>
+
+<ParamField body="--apply" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Applies the profile changes.
+</ParamField>
+
+<ParamField body="--verify" param-type="boolean" required="false" deprecated="false" show-location="true">
+  Verifies the imported profile against the expected configuration.
+</ParamField>
+
+<ParamField body="--tenant" param-type="string" required="true" deprecated="false" show-location="true">
+  Tenant whose disposition profile is imported or verified.
+</ParamField>
+
+<ParamField body="--file" param-type="path" required="true" deprecated="false" show-location="true">
+  Path to the disposition profile file.
+</ParamField>
+
+<Callout kind="alert" collapsed="false">
+  `tdm-dispo-profile-import` requires `ENV=dev`. Production hosts are rejected.
+</Callout>
+
+## MCP Server
+
+The project provides three MCP startup modes:
+
+| Command          | Transport                       | Use                                                     |
+| ---------------- | ------------------------------- | ------------------------------------------------------- |
+| `tdm-mcp`        | stdio                           | Local MCP clients that start the server as a subprocess |
+| `tdm-mcp-http`   | Streamable HTTP                 | HTTP-based MCP clients                                  |
+| `tdm-mcp-remote` | Entra-authenticated remote mode | Remote MCP access with tenant and resource validation   |
+
+```bash
+tdm-mcp
+tdm-mcp-http
+tdm-mcp-remote
+```
+
+### Environment variables
+
+| Variable                        | Mode   | Description                         |
+| ------------------------------- | ------ | ----------------------------------- |
+| `TDM_MCP_HTTP_HOST`             | HTTP   | Bind host for the HTTP server       |
+| `TDM_MCP_HTTP_PORT`             | HTTP   | Bind port for the HTTP server       |
+| `TDM_MCP_HTTP_PATH`             | HTTP   | HTTP path used by the MCP endpoint  |
+| `TDM_MCP_PROFILE`               | All    | MCP profile selected by the server  |
+| `TDM_MCP_REMOTE_TENANT_ID`      | Remote | Entra tenant identifier             |
+| `TDM_MCP_REMOTE_CLIENT_ID`      | Remote | Entra application client identifier |
+| `TDM_MCP_REMOTE_RESOURCE_URL`   | Remote | Protected resource URL              |
+| `TDM_MCP_REMOTE_ALLOWED_GROUPS` | Remote | Allowed Entra group identifiers     |
+
+<Callout kind="info" collapsed="false">
+  The MCP extra requires `mcp` version 1.2 or later and below 2.0. Install it with the `mcp` extra rather than adding an unconstrained MCP dependency.
+</Callout>
+
+## Installation
+
+Install the base package for runtime use. Add an extra when you need development tools, MCP support, or Azure Blob snapshot storage.
+
+<CodeGroup show-lines="true">
+  ```bash
+  pip install -e ".[dev]"
+  ```
+
+  ```bash
+  pip install -e ".[mcp]"
+  ```
+
+  ```bash
+  pip install -e ".[clone]"
+  ```
+</CodeGroup>
+
+| Extra   | Includes                                  |
+| ------- | ----------------------------------------- |
+| `dev`   | `ruff`, `pytest`, `mypy`, and `respx`     |
+| `mcp`   | `mcp` version 1.2 or later and below 2.0  |
+| `clone` | `azure-storage-blob`                      |
+| base    | Core TourData Mirror runtime dependencies |
+
+<Columns cols="3">
+  <Card title="Run migrations" href="#schema-migrationen" icon="database" cta="View commands" horizontal="false">
+    Apply and inspect database migrations with `tdm-migrate`.
+  </Card>
+
+  <Card title="Backfill data" href="#daten-backfill-ingestion" icon="download" cta="View commands" horizontal="false">
+    Synchronize trips, bookings, customers, and related records.
+  </Card>
+
+  <Card title="Start MCP" href="#mcp-server" icon="terminal" cta="View commands" horizontal="false">
+    Choose stdio, HTTP, or remote MCP startup.
+  </Card>
+</Columns>
+

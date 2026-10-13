@@ -110,6 +110,11 @@
                 "title": "Konfiguration & Environment",
                 "path": "tourdata-mirror/configuration",
                 "icon": "settings"
+              },
+              {
+                "title": "CLI-Referenz",
+                "path": "tourdata-mirror/cli-reference",
+                "icon": "terminal-square"
               }
             ],
             "openapi": "api-reference/openapi.json"
